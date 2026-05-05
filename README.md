@@ -77,7 +77,7 @@ Two one-time setup gates surfaced in the Chrome tab itself:
 
 Each Highlight / Font Color / Font Family / Translate row carries its own picker — color swatch, RGB well, font menu, or language menu. State persists across export / import.
 
-Orange ⚠ on *Crop* / *Lock Aspect Ratio* means an image must be selected.
+Orange ⚠ marks Ribbon-only commands (those without an AppleScript fallback). *Crop* and *Lock Aspect Ratio* additionally need an image to be selected before the shortcut fires.
 
 **Need something else?** Click *Add from Word…* / *Add from PowerPoint…*; Ribbind reads any Ribbon button or menu item live. **[Open an issue](../../issues/new)** for new features.
 

@@ -23,7 +23,7 @@ struct GeneralView: View {
             Section("Permissions") {
                 permissionRow(label: "Accessibility",
                               ok: accessibilityGranted,
-                              detail: "Required so Ribbind can intercept your bound key combos before Word/PowerPoint sees them, and click Format Painter / Shape buttons in the Ribbon.")
+                              detail: "Required so Ribbind can intercept your bound key combos before Word, PowerPoint, or Chrome sees them, and click Ribbon buttons or run translation JavaScript on your behalf.")
 
                 HStack(spacing: 8) {
                     Button("Re-grant Accessibility") {
@@ -52,7 +52,7 @@ struct GeneralView: View {
             Section("Office detection") {
                 officeRow(label: "Microsoft Word", target: .word)
                 officeRow(label: "Microsoft PowerPoint", target: .powerpoint)
-                Text("First time you press a color or shape shortcut, macOS will ask whether to allow Ribbind to control Word/PowerPoint. Click \"OK\" — that's the only extra setup. Subsequent presses are instant.")
+                Text("First time you press a color, shape, or translate shortcut, macOS will ask whether to allow Ribbind to control Word, PowerPoint, or Chrome. Click \"OK\" — that's the only extra setup. Subsequent presses are instant.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -98,7 +98,7 @@ struct GeneralView: View {
             }
 
             Section("About") {
-                Text("Ribbind assigns keyboard shortcuts to Microsoft Word and PowerPoint commands — including Ribbon-only commands that macOS System Settings cannot reach.")
+                Text("Ribbind assigns keyboard shortcuts to Microsoft Word, PowerPoint, and Google Chrome commands — including Ribbon-only commands that macOS System Settings cannot reach, plus Chrome's built-in Translate Page as a single-keystroke toggle.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 HStack {
