@@ -8,7 +8,7 @@ Bind any keyboard shortcut to any Microsoft Word, PowerPoint, or Google Chrome c
 
 ---
 
-## Install
+## Install / Update
 
 Open Terminal (`⌘ + Space` → `Terminal`).
 
@@ -18,12 +18,12 @@ Open Terminal (`⌘ + Space` → `Terminal`).
 xcode-select --install
 ```
 
-**2. Build and install Ribbind:**
+**2. Run the install block.** Same command for first install and every update — it clones if missing, pulls if already cloned, then builds and installs into `/Applications/`:
 
 ```sh
-cd ~/Downloads
-git clone https://github.com/minguk2/ribbind.git
-cd ribbind
+mkdir -p ~/Downloads && cd ~/Downloads
+if [ -d ribbind/.git ]; then (cd ribbind && git pull); else git clone https://github.com/minguk2/ribbind.git ribbind; fi
+cd ~/Downloads/ribbind
 scripts/build-app.sh release
 pkill -f /Applications/Ribbind.app 2>/dev/null; sleep 1
 rm -rf /Applications/Ribbind.app
@@ -34,6 +34,8 @@ open /Applications/Ribbind.app
 Build is ~30 s. Ribbind lives in the menu bar (no Dock icon).
 
 **3. Grant Accessibility** when prompted, plus **Automation** the first time you fire a Word / PowerPoint / Chrome shortcut. Each is a single click in a system dialog.
+
+After updates, you may need to remove and re-add Ribbind in System Settings → Privacy & Security → Accessibility (rebuilds rotate the code signature).
 
 Open Settings from the menu bar icon, or `⌘,`.
 
@@ -111,16 +113,7 @@ The **General** tab shows live status: Accessibility check, Office detection, La
 
 **Will it conflict with my Word customizations?** No — Ribbind writes to the same files Word's *Customize Keyboard* uses. Most-recent assignment wins on collision.
 
-**Update?**
-
-```sh
-cd ~/Downloads/ribbind && git pull && scripts/build-app.sh release && \
-  pkill -f /Applications/Ribbind.app 2>/dev/null; sleep 1 && \
-  rm -rf /Applications/Ribbind.app && \
-  mv dist/Ribbind.app /Applications/ && open /Applications/Ribbind.app
-```
-
-May need to re-grant Accessibility after.
+**Update?** Run the same install block at the top of this README — it auto-detects an existing clone and pulls instead of re-cloning.
 
 ---
 
