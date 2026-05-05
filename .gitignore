@@ -1,0 +1,56 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Swift / Xcode
+.build/
+.swiftpm/
+Packages/
+*.xcodeproj/
+*.xcworkspace/
+DerivedData/
+Package.resolved
+xcuserdata/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# macOS packaging
+build/
+dist/
+*.dmg
+*.pkg
+scripts/icon_gen/AppIcon.iconset/
+scripts/icon_gen/preview_1024.png
+
+# Internal dev workspace (not for end users)
+CLAUDE.md
+.claude/
+.claude.local.md
+.git/ribbind-pending-fix.json
+
+# Internal dev docs (not for end users)
+research/
+REQUIREMENTS.md
+TROUBLESHOOTING.md
+CONTRIBUTING.md
+docs/audit/
+docs/verification/
+docs/FAILURE-LEDGER.md
+
+# Internal dev scripts (not for end users)
+scripts/pre-commit.sh
+scripts/post-commit.sh
+scripts/install-hooks.sh
+scripts/session-end-verify.sh
+scripts/verify-full.sh
+scripts/verify-symmetry.sh
+scripts/coverage-report.sh
+scripts/dead-field-check.sh

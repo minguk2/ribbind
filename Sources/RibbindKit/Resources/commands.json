@@ -1,0 +1,519 @@
+[
+  {
+    "id": "word.FormatPainter",
+    "app": "word",
+    "label": "Format Painter",
+    "category": "Format",
+    "idMso": "CopyFormatting",
+    "dispatchRecipes": [
+      {
+        "type": "axClick",
+        "role": "AXCheckBox",
+        "titleContains": "Format",
+        "helpContains": "Copy formatting from one location",
+        "tabName": "Home"
+      },
+      {
+        "type": "wordKeyBinding",
+        "commandName": "FormatPainter",
+        "category": "command"
+      }
+    ],
+    "notes": "Format Painter is a modal Ribbon brush. axClick reproduces the brush cursor; AppleScript can't reproduce the modal cursor state, so this stays on AX. tabName=\"Home\" ensures the button is in the AX tree.",
+    "defaultShortcut": "⌘⇧2"
+  },
+  {
+    "id": "word.Highlight1",
+    "app": "word",
+    "label": "Highlight 1",
+    "category": "Format",
+    "dispatchRecipes": [
+      {
+        "type": "appleScript",
+        "source": "tell application \"Microsoft Word\"\n  set highlight color index of text object of selection to {{param.colorName}}\nend tell"
+      },
+      {
+        "type": "axShowMenuThenClick",
+        "parentRole": "AXMenuButton",
+        "parentTitleContains": "Text Highlight Color",
+        "cellRole": "AXRadioButton",
+        "cellDescription": "Yellow",
+        "tabName": "Home"
+      }
+    ],
+    "notes": "Primary: appleScript sets `highlight color index` (WdColorIndex enum) on the selection. Writes <w:highlight w:val=\"...\"/> in OOXML — same property Word's Home > Text Highlight Color > No Color button clears, so user can toggle highlight off normally. Limited to 15 named WdColorIndex values; no arbitrary RGB.",
+    "defaultParameters": {
+      "colorName": "yellow"
+    },
+    "defaultShortcut": "⌘⇧E"
+  },
+  {
+    "id": "word.Highlight2",
+    "app": "word",
+    "label": "Highlight 2",
+    "category": "Format",
+    "dispatchRecipes": [
+      {
+        "type": "appleScript",
+        "source": "tell application \"Microsoft Word\"\n  set highlight color index of text object of selection to {{param.colorName}}\nend tell"
+      },
+      {
+        "type": "axShowMenuThenClick",
+        "parentRole": "AXMenuButton",
+        "parentTitleContains": "Text Highlight Color",
+        "cellRole": "AXRadioButton",
+        "cellDescription": "Bright Green",
+        "tabName": "Home"
+      }
+    ],
+    "notes": "Primary: appleScript `highlight color index` (named WdColorIndex). Cleared by Word's No Color button. Fallback: axShowMenuThenClick on Bright Green swatch.",
+    "defaultParameters": {
+      "colorName": "bright green"
+    },
+    "defaultShortcut": "⌘⇧W"
+  },
+  {
+    "id": "word.Highlight3",
+    "app": "word",
+    "label": "Highlight 3",
+    "category": "Format",
+    "dispatchRecipes": [
+      {
+        "type": "appleScript",
+        "source": "tell application \"Microsoft Word\"\n  set highlight color index of text object of selection to {{param.colorName}}\nend tell"
+      },
+      {
+        "type": "axShowMenuThenClick",
+        "parentRole": "AXMenuButton",
+        "parentTitleContains": "Text Highlight Color",
+        "cellRole": "AXRadioButton",
+        "cellDescription": "Blue",
+        "tabName": "Home"
+      }
+    ],
+    "notes": "Primary: appleScript `highlight color index` (named WdColorIndex). Cleared by Word's No Color button. Fallback: axShowMenuThenClick on Blue swatch.",
+    "defaultParameters": {
+      "colorName": "blue"
+    },
+    "defaultShortcut": "⌘⇧R"
+  },
+  {
+    "id": "word.FontColor1",
+    "app": "word",
+    "label": "Font Color 1",
+    "category": "Format",
+    "dispatchRecipes": [
+      {
+        "type": "appleScript",
+        "source": "tell application \"Microsoft Word\"\n  set color of font object of text object of selection to {{{param.color.r16}}, {{param.color.g16}}, {{param.color.b16}}}\nend tell"
+      },
+      {
+        "type": "axShowMenuThenClick",
+        "parentRole": "AXMenuButton",
+        "parentTitleContains": "Font Color",
+        "cellRole": "AXRadioButton",
+        "cellDescription": "Automatic",
+        "tabName": "Home"
+      }
+    ],
+    "notes": "Primary: appleScript writes Selection.Font.Color with picker RGB. Fallback: axShowMenuThenClick on Automatic swatch.",
+    "defaultParameters": {
+      "color": "000000"
+    },
+    "defaultShortcut": "⌘⇧V"
+  },
+  {
+    "id": "word.FontColor2",
+    "app": "word",
+    "label": "Font Color 2",
+    "category": "Format",
+    "dispatchRecipes": [
+      {
+        "type": "appleScript",
+        "source": "tell application \"Microsoft Word\"\n  set color of font object of text object of selection to {{{param.color.r16}}, {{param.color.g16}}, {{param.color.b16}}}\nend tell"
+      },
+      {
+        "type": "axShowMenuThenClick",
+        "parentRole": "AXMenuButton",
+        "parentTitleContains": "Font Color",
+        "cellRole": "AXRadioButton",
+        "cellDescription": "White, Background 1",
+        "tabName": "Home"
+      }
+    ],
+    "notes": "Primary: appleScript Selection.Font.Color with picker RGB. Fallback: axShowMenuThenClick on White swatch.",
+    "defaultParameters": {
+      "color": "FFFFFF"
+    },
+    "defaultShortcut": "⌘⇧D"
+  },
+  {
+    "id": "word.FontColor3",
+    "app": "word",
+    "label": "Font Color 3",
+    "category": "Format",
+    "dispatchRecipes": [
+      {
+        "type": "appleScript",
+        "source": "tell application \"Microsoft Word\"\n  set color of font object of text object of selection to {{{param.color.r16}}, {{param.color.g16}}, {{param.color.b16}}}\nend tell"
+      },
+      {
+        "type": "axShowMenuThenClick",
+        "parentRole": "AXMenuButton",
+        "parentTitleContains": "Font Color",
+        "cellRole": "AXRadioButton",
+        "cellDescription": "Red",
+        "tabName": "Home"
+      }
+    ],
+    "notes": "Primary: appleScript Selection.Font.Color with picker RGB. Fallback: axShowMenuThenClick on Red swatch.",
+    "defaultParameters": {
+      "color": "FF0000"
+    },
+    "defaultShortcut": "⌘⇧F"
+  },
+  {
+    "id": "word.FontFamily",
+    "app": "word",
+    "label": "Font Family",
+    "category": "Format",
+    "dispatchRecipes": [
+      {
+        "type": "appleScript",
+        "source": "tell application \"Microsoft Word\"\n  set name of font object of selection to \"{{param.fontName}}\"\nend tell"
+      }
+    ],
+    "notes": "Sets the selected text's font family to the picker-chosen name. Selection-scoped (uses `font object of selection` directly — `text object of selection` silently no-ops on font name set).",
+    "defaultParameters": {
+      "fontName": "Helvetica Neue"
+    },
+    "defaultShortcut": "⌘⇧1"
+  },
+  {
+    "id": "word.Crop",
+    "app": "word",
+    "label": "Crop",
+    "category": "Picture",
+    "idMso": "PictureCrop",
+    "dispatchRecipes": [
+      {
+        "type": "axClick",
+        "role": "AXMenuButton",
+        "titleContains": "Crop",
+        "helpContains": "For more options",
+        "tabName": "Picture Format"
+      }
+    ],
+    "notes": "axClick on the Crop Ribbon button. REQUIRES an image to be selected first — Word's contextual Picture Format tab is what carries the Crop button, and that tab only appears when an image is the active selection. Ribbind activates the tab via tabName before searching.",
+    "defaultShortcut": "⌘⇧C"
+  },
+  {
+    "id": "word.LockAspectRatio",
+    "app": "word",
+    "label": "Lock Aspect Ratio",
+    "category": "Picture",
+    "dispatchRecipes": [
+      {
+        "type": "axClick",
+        "role": "AXCheckBox",
+        "titleContains": "Lock Aspect Ratio",
+        "helpContains": "Lock Aspect Ratio",
+        "tabName": "Picture Format"
+      }
+    ],
+    "notes": "Toggles Lock Aspect Ratio. REQUIRES an image selected AND the Format Picture side pane open (right-click image → Format Picture, or use the Picture Format tab → Format Picture button) so the checkbox is in the AX tree.",
+    "defaultShortcut": "⌘⇧X"
+  },
+  {
+    "id": "powerpoint.FormatPainter",
+    "app": "powerpoint",
+    "label": "Format Painter",
+    "category": "Format",
+    "idMso": "CopyFormatting",
+    "defaultShortcut": "⌘⇧2",
+    "dispatchRecipes": [
+      {
+        "type": "axClick",
+        "role": "AXCheckBox",
+        "titleContains": "Format",
+        "helpContains": "Copy formatting from one location",
+        "tabName": "Home"
+      }
+    ],
+    "notes": "Brush cursor via AX-click of the Ribbon button — AppleScript can't reproduce modal Ribbon brush state."
+  },
+  {
+    "id": "powerpoint.FontColor1",
+    "app": "powerpoint",
+    "label": "Font Color 1",
+    "category": "Format",
+    "dispatchRecipes": [
+      {
+        "type": "appleScript",
+        "source": "tell application \"Microsoft PowerPoint\"\n  set font color of font of text range of selection of document window 1 to {{{param.color.r}}, {{param.color.g}}, {{param.color.b}}}\nend tell"
+      }
+    ],
+    "notes": "Primary: appleScript sets font color of selected text via PowerPoint object model (~140 ms). PowerPoint AS uses 8-bit RGB (0–255), unlike Word's 16-bit. No Ribbon fallback — PPT font color picker UX through Ribbon is awkward.",
+    "defaultParameters": {
+      "color": "000000"
+    },
+    "defaultShortcut": "⌘⇧V"
+  },
+  {
+    "id": "powerpoint.FontColor2",
+    "app": "powerpoint",
+    "label": "Font Color 2",
+    "category": "Format",
+    "dispatchRecipes": [
+      {
+        "type": "appleScript",
+        "source": "tell application \"Microsoft PowerPoint\"\n  set font color of font of text range of selection of document window 1 to {{{param.color.r}}, {{param.color.g}}, {{param.color.b}}}\nend tell"
+      }
+    ],
+    "notes": "Primary: appleScript font color via PPT object model with picker RGB (0–255).",
+    "defaultParameters": {
+      "color": "FFFFFF"
+    },
+    "defaultShortcut": "⌘⇧D"
+  },
+  {
+    "id": "powerpoint.FontColor3",
+    "app": "powerpoint",
+    "label": "Font Color 3",
+    "category": "Format",
+    "dispatchRecipes": [
+      {
+        "type": "appleScript",
+        "source": "tell application \"Microsoft PowerPoint\"\n  set font color of font of text range of selection of document window 1 to {{{param.color.r}}, {{param.color.g}}, {{param.color.b}}}\nend tell"
+      }
+    ],
+    "notes": "Primary: appleScript font color via PPT object model with picker RGB (0–255).",
+    "defaultParameters": {
+      "color": "FF0000"
+    },
+    "defaultShortcut": "⌘⇧F"
+  },
+  {
+    "id": "powerpoint.FontFamily",
+    "app": "powerpoint",
+    "label": "Font Family",
+    "category": "Format",
+    "dispatchRecipes": [
+      {
+        "type": "appleScript",
+        "source": "tell application \"Microsoft PowerPoint\"\n  set font name of font of text range of selection of document window 1 to \"{{param.fontName}}\"\nend tell"
+      }
+    ],
+    "notes": "Sets the selected text's font family to the picker-chosen name. PPT uses the `font name` property (not `name`).",
+    "defaultParameters": {
+      "fontName": "Helvetica Neue"
+    },
+    "defaultShortcut": "⌘⇧1"
+  },
+  {
+    "id": "powerpoint.Crop",
+    "app": "powerpoint",
+    "label": "Crop",
+    "category": "Picture",
+    "idMso": "PictureCrop",
+    "dispatchRecipes": [
+      {
+        "type": "axClick",
+        "role": "AXMenuButton",
+        "titleContains": "Crop",
+        "helpContains": "For more options"
+      }
+    ],
+    "notes": "axClick on the Crop Ribbon button. REQUIRES an image to be selected. PowerPoint exposes Crop on the Quick Access Toolbar when an image is the active selection — no tabName activation needed.",
+    "defaultShortcut": "⌘⇧C"
+  },
+  {
+    "id": "powerpoint.LockAspectRatio",
+    "app": "powerpoint",
+    "label": "Lock Aspect Ratio",
+    "category": "Picture",
+    "dispatchRecipes": [
+      {
+        "type": "axClick",
+        "role": "AXCheckBox",
+        "titleContains": "Lock Aspect Ratio",
+        "helpContains": "Lock Aspect Ratio"
+      }
+    ],
+    "notes": "Toggles Lock Aspect Ratio checkbox. REQUIRES an image selected AND the Format Picture side pane open (Picture Format tab → Format Pane, or right-click → Format Picture) so the checkbox is in the AX tree.",
+    "defaultShortcut": "⌘⇧X"
+  },
+  {
+    "id": "powerpoint.ShapeTextBox",
+    "app": "powerpoint",
+    "label": "Text Box",
+    "category": "Shapes",
+    "dispatchRecipes": [
+      {
+        "type": "nsUserKeyEquivalent",
+        "menuTitle": "Text Box"
+      },
+      {
+        "type": "appleScript",
+        "source": "tell application \"Microsoft PowerPoint\"\n  set sl to slide of view of document window 1\n  make new text box at end of sl with properties {left position:{{mouse.slideX}}, top:{{mouse.slideY}}, width:320, height:80}\nend tell"
+      }
+    ],
+    "notes": "Primary: AX-press the Insert > Text Box menu bar item — PPT enters drag-to-create mode (cursor becomes crosshair, user drags to define size). No Ribbon expansion needed. Fallback (rare — only when AX press fails): appleScript inserts a 320x80 text box at cursor slide-coords via `make new text box` (concrete subclass).",
+    "defaultShortcut": "⌘⇧T"
+  },
+  {
+    "id": "powerpoint.ShapeOval",
+    "app": "powerpoint",
+    "label": "Oval",
+    "category": "Shapes",
+    "idMso": "ShapeOval",
+    "dispatchRecipes": [
+      {
+        "type": "nsUserKeyEquivalent",
+        "menuTitle": "Oval"
+      },
+      {
+        "type": "appleScript",
+        "source": "tell application \"Microsoft PowerPoint\"\n  set sl to slide of view of document window 1\n  set newShape to make new shape at sl with properties {shape type:rectangle, left position:200, top:150, width:200, height:150}\n  set auto shape type of newShape to 9\nend tell"
+      },
+      {
+        "type": "axShowMenuThenClick",
+        "parentRole": "AXMenuButton",
+        "parentTitleContains": "Shapes",
+        "cellRole": "AXRadioButton",
+        "cellDescription": "Oval",
+        "tabName": "Insert"
+      }
+    ],
+    "notes": "Primary: AX-press the Insert > Shape > Oval menu bar item — drag-to-create cursor armed, no Ribbon needed. Fallbacks: appleScript creates a fixed 200x150 oval (msoShapeOval=9); axShowMenuThenClick on Ribbon if menu bar dispatch + AS both fail.",
+    "defaultShortcut": "⌘⇧E"
+  },
+  {
+    "id": "powerpoint.ShapeRectangle",
+    "app": "powerpoint",
+    "label": "Rectangle",
+    "category": "Shapes",
+    "idMso": "ShapeRectangle",
+    "dispatchRecipes": [
+      {
+        "type": "nsUserKeyEquivalent",
+        "menuTitle": "Rectangle"
+      },
+      {
+        "type": "appleScript",
+        "source": "tell application \"Microsoft PowerPoint\"\n  set sl to slide of view of document window 1\n  set newShape to make new shape at sl with properties {shape type:rectangle, left position:200, top:150, width:200, height:150}\n  set auto shape type of newShape to 1\nend tell"
+      },
+      {
+        "type": "axShowMenuThenClick",
+        "parentRole": "AXMenuButton",
+        "parentTitleContains": "Shapes",
+        "cellRole": "AXRadioButton",
+        "cellDescription": "Rectangle",
+        "tabName": "Insert"
+      }
+    ],
+    "notes": "Primary: AX-press the Insert > Shape > Rectangle menu bar item — drag-to-create cursor armed. Fallbacks: AS fixed 200x150 rectangle (msoShapeRectangle=1); Ribbon click.",
+    "defaultShortcut": "⌘⇧R"
+  },
+  {
+    "id": "powerpoint.ShapeRoundedRectangle",
+    "app": "powerpoint",
+    "label": "Rounded Rectangle",
+    "category": "Shapes",
+    "idMso": "ShapeRoundedRectangle",
+    "dispatchRecipes": [
+      {
+        "type": "nsUserKeyEquivalent",
+        "menuTitle": "Rounded Rectangle"
+      },
+      {
+        "type": "appleScript",
+        "source": "tell application \"Microsoft PowerPoint\"\n  set sl to slide of view of document window 1\n  set newShape to make new shape at sl with properties {shape type:rectangle, left position:200, top:150, width:200, height:150}\n  set auto shape type of newShape to 5\nend tell"
+      },
+      {
+        "type": "axShowMenuThenClick",
+        "parentRole": "AXMenuButton",
+        "parentTitleContains": "Shapes",
+        "cellRole": "AXRadioButton",
+        "cellDescription": "Rounded Rectangle",
+        "tabName": "Insert"
+      }
+    ],
+    "notes": "Primary: AX-press Insert > Shape > Rounded Rectangle menu bar item — drag cursor armed. Fallbacks: AS msoShapeRoundedRectangle=5; Ribbon click."
+  },
+  {
+    "id": "powerpoint.ShapeArrowLeft",
+    "app": "powerpoint",
+    "label": "Left Arrow (Block)",
+    "category": "Shapes",
+    "idMso": "ShapeArrowLeft",
+    "dispatchRecipes": [
+      {
+        "type": "appleScript",
+        "source": "tell application \"Microsoft PowerPoint\"\n  set sl to slide of view of document window 1\n  set newShape to make new shape at sl with properties {shape type:rectangle, left position:200, top:150, width:200, height:150}\n  set auto shape type of newShape to 34\nend tell"
+      },
+      {
+        "type": "axShowMenuThenClick",
+        "parentRole": "AXMenuButton",
+        "parentTitleContains": "Shapes",
+        "cellRole": "AXRadioButton",
+        "cellDescription": "Left Arrow",
+        "tabName": "Insert"
+      }
+    ],
+    "notes": "Primary: appleScript msoShapeLeftArrow=34. Fallback: Ribbon click.",
+    "defaultShortcut": "⌘⇧W"
+  },
+  {
+    "id": "powerpoint.ShapeArrowDown",
+    "app": "powerpoint",
+    "label": "Down Arrow (Block)",
+    "category": "Shapes",
+    "idMso": "ShapeArrowDown",
+    "dispatchRecipes": [
+      {
+        "type": "appleScript",
+        "source": "tell application \"Microsoft PowerPoint\"\n  set sl to slide of view of document window 1\n  set newShape to make new shape at sl with properties {shape type:rectangle, left position:200, top:150, width:200, height:150}\n  set auto shape type of newShape to 36\nend tell"
+      },
+      {
+        "type": "axShowMenuThenClick",
+        "parentRole": "AXMenuButton",
+        "parentTitleContains": "Shapes",
+        "cellRole": "AXRadioButton",
+        "cellDescription": "Down Arrow",
+        "tabName": "Insert"
+      }
+    ],
+    "notes": "Primary: appleScript msoShapeDownArrow=36. Fallback: Ribbon click."
+  },
+  {
+    "id": "powerpoint.HideSlide",
+    "app": "powerpoint",
+    "label": "Hide Slide",
+    "category": "Slide Show",
+    "dispatchRecipes": [
+      {
+        "type": "nsUserKeyEquivalent",
+        "menuTitle": "Hide Slide"
+      }
+    ],
+    "notes": "AX-press the Slide Show > Hide Slide menu bar item to toggle the selected slide's hidden state (slide will be skipped during slideshow).",
+    "defaultShortcut": "⌘⇧H"
+  },
+  {
+    "id": "chrome.Translate",
+    "app": "chrome",
+    "label": "Translate Page (toggle)",
+    "category": "Page",
+    "dispatchRecipes": [
+      {
+        "type": "chromeTranslateToggle"
+      }
+    ],
+    "notes": "Pure-backend toggle via AppleScript JS injection. Uses Chrome 138+'s on-device `Translator` + `LanguageDetector` APIs (same engine as the URL-bar translate icon). Toggle keeps state in `<html data-ribbindTranslated>` + each text node's `__ribbindOrig`. No external network at translation time, no API keys, no rate limits, works on any page (PDF / SPA / file://) regardless of the URL-bar icon visibility. Two one-time setups per Chrome profile, both surfaced in Ribbind Settings → Google Chrome: (1) `View > Developer > Allow JavaScript from Apple Events` toggle (Chrome's per-profile security gate); (2) translation model download, which Chrome requires to be triggered by a real user gesture — Ribbind installs a one-shot click listener on the active tab and prompts the user to click anywhere on the page once.",
+    "defaultParameters": {
+      "targetLanguage": "ko"
+    },
+    "defaultShortcut": "⌃⌘T"
+  }
+]
