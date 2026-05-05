@@ -134,6 +134,4 @@ May need to re-grant Accessibility after.
 
 ## License
 
-[MIT](./LICENSE). Vendored [KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts) keeps its own MIT license.
-
-If Ribbind helped, [a coffee on Ko-fi](https://ko-fi.com/minguk2) is appreciated.
+[MIT](./LICENSE)
