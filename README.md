@@ -18,12 +18,13 @@ Open Terminal (`⌘ + Space` → `Terminal`).
 xcode-select --install
 ```
 
-**2. Run the install block.** Same command for first install and every update — it clones if missing, pulls if already cloned, then builds and installs into `/Applications/`:
+**2. Run the install block.** Same command for first install and every update — wipes any prior source clone, fetches the latest from GitHub, builds, and installs into `/Applications/`:
 
 ```sh
 mkdir -p ~/Downloads && cd ~/Downloads
-if [ -d ribbind/.git ]; then (cd ribbind && git pull); else git clone https://github.com/minguk2/ribbind.git ribbind; fi
-cd ~/Downloads/ribbind
+rm -rf ribbind
+git clone https://github.com/minguk2/ribbind.git
+cd ribbind
 scripts/build-app.sh release
 pkill -f /Applications/Ribbind.app 2>/dev/null; sleep 1
 rm -rf /Applications/Ribbind.app
@@ -113,7 +114,7 @@ The **General** tab shows live status: Accessibility check, Office detection, La
 
 **Will it conflict with my Word customizations?** No — Ribbind writes to the same files Word's *Customize Keyboard* uses. Most-recent assignment wins on collision.
 
-**Update?** Run the same install block at the top of this README — it auto-detects an existing clone and pulls instead of re-cloning.
+**Update?** Run the same install block at the top of this README. It wipes the prior source clone and rebuilds from the latest remote — the running app and old `/Applications/Ribbind.app` are replaced in one shot.
 
 ---
 
