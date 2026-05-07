@@ -429,6 +429,20 @@ public final class BindingCoordinator: ObservableObject {
                       command.id, String(describing: error))
                 return false
             }
+
+        case .pasteWithFormat:
+            // Read pasteType from binding (or catalog default), route via PasteDispatcher.
+            let resolved = (binding?.parameters ?? [:])
+                .merging(command.defaultParameters ?? [:]) { cur, _ in cur }
+            let pasteType = resolved["pasteType"] ?? "default"
+            do {
+                try PasteDispatcher.dispatch(pasteType: pasteType, app: command.app)
+                return true
+            } catch {
+                NSLog("[Ribbind] pasteWithFormat failed for %@ (pasteType=%@): %@",
+                      command.id, pasteType, String(describing: error))
+                return false
+            }
         }
     }
 }

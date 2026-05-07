@@ -59,6 +59,18 @@ struct ShortcutRow: View {
                 .help("Target language for Translate Page. Chrome downloads the on-device model for this pair on first use (one-time, ~50 MB) — Settings → Google Chrome guides the download.")
             }
 
+            if hasPasteFormatParam {
+                Picker("", selection: pasteTypeBinding) {
+                    ForEach(PasteTypeMenu.options(forApp: command.app)) { opt in
+                        Text(opt.displayName).tag(opt.code)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .frame(width: 150)
+                .help("Paste format applied when this shortcut fires. Word uses AppleScript paste-special directly; PowerPoint uses menu-bar items or a clipboard swap — both instant, no dialog.")
+            }
+
             if hasFontParam {
                 Picker("", selection: fontNameBinding) {
                     ForEach(NSFontManager.shared.availableFontFamilies, id: \.self) { family in
@@ -179,6 +191,31 @@ struct ShortcutRow: View {
             },
             set: { newCode in
                 store.setParameter(commandId: command.id, key: "targetLanguage", value: newCode)
+            }
+        )
+    }
+
+    /// True when this command takes a paste-format parameter (the recipe is
+    /// `pasteWithFormat`). Used by `word.PasteWithFormat` and
+    /// `powerpoint.PasteWithFormat` to render the paste-type picker.
+    private var hasPasteFormatParam: Bool {
+        command.dispatchRecipes.contains { recipe in
+            if case .pasteWithFormat = recipe { return true }
+            return false
+        }
+    }
+
+    /// Two-way binding for the pasteType parameter. Default from catalog,
+    /// then "default".
+    private var pasteTypeBinding: Binding<String> {
+        Binding(
+            get: {
+                store.binding(for: command.id)?.parameters?["pasteType"]
+                    ?? command.defaultParameters?["pasteType"]
+                    ?? "default"
+            },
+            set: { newType in
+                store.setParameter(commandId: command.id, key: "pasteType", value: newType)
             }
         )
     }
@@ -435,5 +472,34 @@ struct NamedHighlightColorMenu: View {
                 RoundedRectangle(cornerRadius: 3)
                     .strokeBorder(Color.gray.opacity(0.4), lineWidth: 0.5)
             )
+    }
+}
+
+/// Paste-type catalog used by `word.PasteWithFormat` and
+/// `powerpoint.PasteWithFormat` rows. The picker is app-aware: Word exposes
+/// the full set (every WdPasteDataType reachable via AppleScript paste-special),
+/// while PowerPoint only exposes the three types it can apply instantly
+/// (default + matchFormatting via menu bar, unformatted via clipboard swap).
+struct PasteTypeMenu {
+    struct Option: Identifiable, Hashable {
+        let code: String       // pasteType key (matches PasteDispatcher dispatch keys)
+        let displayName: String
+        let supportedBy: Set<AppTarget>
+        var id: String { code }
+    }
+
+    static let allOptions: [Option] = [
+        .init(code: "default",          displayName: "Default",          supportedBy: [.word, .powerpoint]),
+        .init(code: "unformatted",      displayName: "Unformatted",      supportedBy: [.word, .powerpoint]),
+        .init(code: "matchFormatting",  displayName: "Match Format",     supportedBy: [.word, .powerpoint]),
+        .init(code: "keepSourceFormat", displayName: "Source (RTF)",     supportedBy: [.word]),
+        .init(code: "asPicture",        displayName: "As Picture",       supportedBy: [.word]),
+        .init(code: "asHtml",           displayName: "As HTML",          supportedBy: [.word]),
+    ]
+
+    /// Filter the option list by which target app actually supports each
+    /// paste type via an instant (no-dialog) dispatch path.
+    static func options(forApp app: AppTarget) -> [Option] {
+        allOptions.filter { $0.supportedBy.contains(app) }
     }
 }

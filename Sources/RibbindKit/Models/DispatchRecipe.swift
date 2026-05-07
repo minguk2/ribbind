@@ -72,6 +72,22 @@ public enum DispatchRecipe: Hashable, Sendable {
     /// poll times out and the dispatch fails with a clear error. Same when
     /// the page's language matches the user's Chrome translation language.
     case chromeTranslateToggle
+    /// Word / PowerPoint paste with a specific format chosen via the
+    /// per-binding `pasteType` parameter. The dispatcher (see
+    /// `PasteDispatcher.dispatch`) reads `binding.parameters["pasteType"]`
+    /// (falling back to `defaultParameters`) and routes to one of:
+    ///   - Word AppleScript `paste special data type X` for direct paste types
+    ///     (unformatted, rtf, enhanced metafile, html) — instant, no dialog
+    ///   - Menu-bar `Paste` / `Paste and Match Formatting` via
+    ///     `nsUserKeyEquivalent` for the universal cases — instant, no menu
+    ///     animation
+    ///   - PPT clipboard-swap (NSPasteboard plain-text rewrite + AS paste)
+    ///     for `unformatted` since PPT's AppleScript dictionary lacks paste-
+    ///     type support — instant, no dialog
+    /// The recipe carries no parameters itself; the paste type lives in the
+    /// binding so the user can change it via a Settings picker without
+    /// re-recording the shortcut.
+    case pasteWithFormat
 }
 
 extension DispatchRecipe: Codable {
@@ -91,6 +107,7 @@ extension DispatchRecipe: Codable {
         case axShowMenuThenClick
         case appleScript
         case chromeTranslateToggle
+        case pasteWithFormat
     }
 
     public init(from decoder: Decoder) throws {
@@ -136,6 +153,8 @@ extension DispatchRecipe: Codable {
             self = .appleScript(source: try c.decode(String.self, forKey: .source))
         case .chromeTranslateToggle:
             self = .chromeTranslateToggle
+        case .pasteWithFormat:
+            self = .pasteWithFormat
         }
     }
 
@@ -174,6 +193,8 @@ extension DispatchRecipe: Codable {
             try c.encode(source, forKey: .source)
         case .chromeTranslateToggle:
             try c.encode(RecipeType.chromeTranslateToggle, forKey: .type)
+        case .pasteWithFormat:
+            try c.encode(RecipeType.pasteWithFormat, forKey: .type)
         }
     }
 }

@@ -11,7 +11,10 @@ import RibbindKit
 struct ChromeJSAutomationSetupRow: View {
     @EnvironmentObject private var store: PreferenceStore
     @EnvironmentObject private var catalog: Catalog
-    @State private var asJsEnabled: Bool = ChromeJSAutomation.isEnabled()
+    // Default false — the initial probe runs asynchronously in the first
+    // statusTimer fire (~2.5 s after the tab appears) so View init never
+    // blocks the main thread on a synchronous Chrome NSAppleScript call.
+    @State private var asJsEnabled: Bool = false
     @State private var modelStatus: ChromeJSAutomation.ModelStatus = .unknown
     @State private var downloadProgress: Int? = nil
     @State private var downloadError: String? = nil
@@ -45,6 +48,16 @@ struct ChromeJSAutomationSetupRow: View {
             asJsRow
             if asJsEnabled {
                 modelRow
+            }
+        }
+        .onAppear {
+            // Initial probe runs once when the Chrome tab first appears, async
+            // so View init / layout does NOT block on AppleScript.
+            DispatchQueue.global(qos: .userInitiated).async {
+                let now = ChromeJSAutomation.isEnabled()
+                DispatchQueue.main.async {
+                    if now != asJsEnabled { asJsEnabled = now }
+                }
             }
         }
     }
@@ -91,21 +104,28 @@ struct ChromeJSAutomationSetupRow: View {
                 .strokeBorder((asJsEnabled ? Color.green : Color.orange).opacity(0.25), lineWidth: 1)
         )
         .onReceive(statusTimer) { _ in
-            let now = ChromeJSAutomation.isEnabled()
-            if now != asJsEnabled { asJsEnabled = now }
-            // Re-poll model status for the CURRENT target. If the user just
-            // changed the language picker, this picks up the new code.
-            if asJsEnabled {
-                let currentTarget = target
-                if currentTarget != lastPolledTarget {
-                    // Target changed — reset transient state.
-                    awaitingClick = false
-                    downloadProgress = nil
-                    downloadError = nil
+            // Capture target on main; AS calls below run on background queue so
+            // a slow Chrome (or a hung NSAppleScript event) doesn't freeze the
+            // app's main thread (which would make the menu bar icon at the
+            // top-right of the screen unresponsive).
+            let currentTarget = target
+            DispatchQueue.global(qos: .userInitiated).async {
+                let now = ChromeJSAutomation.isEnabled()
+                let avail: ChromeJSAutomation.ModelStatus? = now
+                    ? ChromeJSAutomation.translatorAvailability(target: currentTarget)
+                    : nil
+                DispatchQueue.main.async {
+                    if now != asJsEnabled { asJsEnabled = now }
+                    if now {
+                        if currentTarget != lastPolledTarget {
+                            awaitingClick = false
+                            downloadProgress = nil
+                            downloadError = nil
+                        }
+                        lastPolledTarget = currentTarget
+                        if let s = avail, s != modelStatus { modelStatus = s }
+                    }
                 }
-                lastPolledTarget = currentTarget
-                let s = ChromeJSAutomation.translatorAvailability(target: currentTarget)
-                if s != modelStatus { modelStatus = s }
             }
         }
     }
@@ -148,19 +168,28 @@ struct ChromeJSAutomationSetupRow: View {
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(color.opacity(0.25), lineWidth: 1))
         .onAppear {
             lastPolledTarget = target
-            modelStatus = ChromeJSAutomation.translatorAvailability(target: target)
+            // Async — same reason as the timer below.
+            let t = target
+            DispatchQueue.global(qos: .userInitiated).async {
+                let s = ChromeJSAutomation.translatorAvailability(target: t)
+                DispatchQueue.main.async { modelStatus = s }
+            }
         }
         .onReceive(progressTimer) { _ in
-            if awaitingClick {
-                let s = ChromeJSAutomation.readModelDownloadState(target: target)
-                downloadProgress = s.progress
-                downloadError = s.error
-                if s.ready {
-                    awaitingClick = false
-                    modelStatus = .available
-                }
-                if s.error != nil {
-                    awaitingClick = false
+            guard awaitingClick else { return }
+            let t = target
+            DispatchQueue.global(qos: .userInitiated).async {
+                let s = ChromeJSAutomation.readModelDownloadState(target: t)
+                DispatchQueue.main.async {
+                    downloadProgress = s.progress
+                    downloadError = s.error
+                    if s.ready {
+                        awaitingClick = false
+                        modelStatus = .available
+                    }
+                    if s.error != nil {
+                        awaitingClick = false
+                    }
                 }
             }
         }

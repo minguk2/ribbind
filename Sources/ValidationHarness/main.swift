@@ -937,6 +937,29 @@ struct ValidationHarness {
             manualVerifyOnly: true
         ))
 
+        // word.PasteWithFormat and powerpoint.PasteWithFormat dispatch via
+        // PasteDispatcher (Word AS / menu / PPT clipboard swap). Verifying the
+        // actual paste effect requires a clipboard fixture + selection state
+        // that's painful to script reliably, so these are manualVerifyOnly.
+        // The scenarios exist only to satisfy the catalog↔scenario symmetry
+        // check; the real checks live in the Tier 1 catalog assertions below.
+        out.append(E2EScenario(
+            commandId: "word.PasteWithFormat", app: .word, binding: nil,
+            setup: "", teardown: "",
+            expectedChanges: [],
+            positiveAssert: { _, _ in nil },
+            skipScratchInTier2c: true,
+            manualVerifyOnly: true
+        ))
+        out.append(E2EScenario(
+            commandId: "powerpoint.PasteWithFormat", app: .powerpoint, binding: nil,
+            setup: "", teardown: "",
+            expectedChanges: [],
+            positiveAssert: { _, _ in nil },
+            skipScratchInTier2c: true,
+            manualVerifyOnly: true
+        ))
+
         // Chrome.Translate dispatches via AX right-click + context-menu AXPress.
         // Verifying it would require Chrome open on a non-English page in Chrome's
         // preferred Translation language, AND a stable cursor position over web
@@ -3428,6 +3451,27 @@ struct ValidationHarness {
         v.check("powerpoint.ShapeLine NOT in catalog (removed 2026-04-25 — connector, not auto shape)") {
             try v.expect(!catalog.commands.contains { $0.id == "powerpoint.ShapeLine" },
                          "ShapeLine was removed because it requires connector-geometry AS that doesn't fit the auto-shape pattern; do not re-add without a separate appleScript recipe")
+        }
+        v.check("word.PasteWithFormat + powerpoint.PasteWithFormat are pasteWithFormat with valid pasteType default") {
+            // Both apps ship a single Paste-with-Format entry; per-binding
+            // pasteType picker (UI: PasteTypeMenu) drives the dispatch. Valid
+            // codes are the union of all PasteDispatcher (app, pasteType)
+            // branches — keep this list in sync with PasteDispatcher.swift.
+            let validCodes: Set<String> = [
+                "default", "unformatted", "matchFormatting",
+                "keepSourceFormat", "asPicture", "asHtml",
+            ]
+            for id in ["word.PasteWithFormat", "powerpoint.PasteWithFormat"] {
+                guard let cmd = catalog.commands.first(where: { $0.id == id }) else {
+                    throw Validator.ValidationError("\(id) missing from catalog")
+                }
+                guard case .pasteWithFormat = cmd.dispatchRecipes.first! else {
+                    throw Validator.ValidationError("\(id) primary recipe must be pasteWithFormat")
+                }
+                let defaultType = cmd.defaultParameters?["pasteType"] ?? ""
+                try v.expect(validCodes.contains(defaultType),
+                             "\(id) defaultParameters.pasteType '\(defaultType)' not in valid set \(validCodes)")
+            }
         }
         v.check("chrome.Translate is chromeTranslateToggle (Translator API JS injection)") {
             guard let cmd = catalog.commands.first(where: { $0.id == "chrome.Translate" }) else {

@@ -515,5 +515,37 @@
       "targetLanguage": "ko"
     },
     "defaultShortcut": "⌃⌘T"
+  },
+  {
+    "id": "word.PasteWithFormat",
+    "app": "word",
+    "label": "Paste with Format",
+    "category": "Format",
+    "dispatchRecipes": [
+      {
+        "type": "pasteWithFormat"
+      }
+    ],
+    "defaultParameters": {
+      "pasteType": "unformatted"
+    },
+    "defaultShortcut": "⌘V",
+    "notes": "Cmd+V intercepted in Word foreground. pasteType (default / unformatted / matchFormatting / keepSourceFormat / asPicture / asHtml) chosen via per-binding picker. Word uses AppleScript paste special — instant, no dialog, no Ribbon animation. Cmd+V is hijacked while Word is frontmost; other apps still get their normal Cmd+V behavior."
+  },
+  {
+    "id": "powerpoint.PasteWithFormat",
+    "app": "powerpoint",
+    "label": "Paste with Format",
+    "category": "Format",
+    "dispatchRecipes": [
+      {
+        "type": "pasteWithFormat"
+      }
+    ],
+    "defaultParameters": {
+      "pasteType": "unformatted"
+    },
+    "defaultShortcut": "⌘V",
+    "notes": "Cmd+V intercepted in PowerPoint foreground. PPT picker exposes default / unformatted / matchFormatting only (PPT's AS dictionary lacks paste-type support, so other Word-only types are omitted). Unformatted dispatches via NSPasteboard clipboard swap (plain-text rewrite + AS paste + auto-restore) — instant, no dialog. Cmd+V hijack scoped to PPT frontmost."
   }
 ]

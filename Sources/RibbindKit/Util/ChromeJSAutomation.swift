@@ -71,27 +71,35 @@ public enum ChromeJSAutomation {
     /// click it with one keystroke (Return). Chrome's macOS menu items DO
     /// respond to user mouse clicks even when AX-press is disabled, so this
     /// helper just navigates the user there — it cannot click the toggle.
-    @MainActor
+    ///
+    /// Runs entirely on a background queue: `chrome.activate()` is fast but
+    /// the System Events AS that opens View → Developer can take 300–500 ms
+    /// (two AX clicks + delays) and would otherwise block Ribbind's main
+    /// thread, freezing its menu bar icon. Dispatching async also means the
+    /// caller (Settings UI button) returns immediately so the user can click
+    /// elsewhere if they change their mind.
     public static func openEnableMenu() {
-        guard let chrome = NSRunningApplication.runningApplications(
-            withBundleIdentifier: "com.google.Chrome").first
-        else { return }
-        chrome.activate()
-        // Wait briefly for Chrome to come frontmost before opening the menu.
-        Thread.sleep(forTimeInterval: 0.2)
-        let openMenuAS = """
-        tell application "System Events"
-            tell process "Google Chrome"
-                set frontmost to true
-                click menu bar item "View" of menu bar 1
-                delay 0.15
-                click menu item "Developer" of menu 1 of menu bar item "View" of menu bar 1
-                delay 0.15
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard let chrome = NSRunningApplication.runningApplications(
+                withBundleIdentifier: "com.google.Chrome").first
+            else { return }
+            chrome.activate()
+            // Wait briefly for Chrome to come frontmost before opening the menu.
+            Thread.sleep(forTimeInterval: 0.2)
+            let openMenuAS = """
+            tell application "System Events"
+                tell process "Google Chrome"
+                    set frontmost to true
+                    click menu bar item "View" of menu bar 1
+                    delay 0.15
+                    click menu item "Developer" of menu 1 of menu bar item "View" of menu bar 1
+                    delay 0.15
+                end tell
             end tell
-        end tell
-        """
-        var err: NSDictionary?
-        NSAppleScript(source: openMenuAS)?.executeAndReturnError(&err)
+            """
+            var err: NSDictionary?
+            NSAppleScript(source: openMenuAS)?.executeAndReturnError(&err)
+        }
     }
 
     private static func isChromeRunning() -> Bool {
