@@ -38,8 +38,13 @@ jobs:
       - name: Run ValidationHarness (Tier 1, no fixtures on CI)
         run: swift run -c release ValidationHarness
 
-      - name: Build .app bundle (arm64, ad-hoc signed)
-        run: ./scripts/build-app.sh release
+      - name: Build .app bundle (universal — arm64 + x86_64, ad-hoc signed)
+        # Universal build so the released .app runs on both Apple Silicon AND
+        # Intel Macs natively (no Rosetta penalty). Swift PM produces a fat
+        # Mach-O via `--arch arm64 --arch x86_64`; build-app.sh handles the
+        # build-output-path difference (apple/Products/Release vs the
+        # single-arch arm64-apple-macosx/release).
+        run: ./scripts/build-app.sh release universal
 
       - name: Verify bundle signature + structure
         run: |

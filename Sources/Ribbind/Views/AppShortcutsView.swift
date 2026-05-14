@@ -24,9 +24,6 @@ struct AppShortcutsView: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            if app == .chrome {
-                ChromeJSAutomationSetupRow()
-            }
             // Search + filter + "Add from app" controls only make sense for
             // Office apps (Word / PowerPoint) where the catalog has dozens of
             // commands and users may want to scan the Ribbon for more. The
@@ -54,9 +51,9 @@ struct AppShortcutsView: View {
                     .help("Scan the running Office app's Ribbon and menu bar and add one of its commands to Ribbind.")
                 }
                 .padding(.horizontal, 4)
-            }
 
-            Divider()
+                Divider()
+            }
 
             if catalog.commands.isEmpty {
                 ContentUnavailableView(
@@ -77,6 +74,17 @@ struct AppShortcutsView: View {
                     VStack(alignment: .leading, spacing: 24) {
                         ForEach(groupedFiltered, id: \.category) { entry in
                             categoryBlock(entry)
+                        }
+                        // Chrome's setup status (AS-JS toggle + model download)
+                        // belongs UNDER the shortcut binding row, not above
+                        // it. Once setup is green the binding row is the
+                        // thing users return to — putting it on top reduces
+                        // scrolling/scanning to find the actual hotkey. The
+                        // setup card stays visible below for the one-time
+                        // gates and as a health indicator.
+                        if app == .chrome {
+                            ChromeJSAutomationSetupRow()
+                                .padding(.top, 8)
                         }
                     }
                     .padding(.horizontal, 4)
