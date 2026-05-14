@@ -28,6 +28,8 @@ jobs:
       - name: Show toolchain
         run: |
           xcode-select -p || true
+          xcrun --find xcbuild 2>&1 || echo "xcbuild not found"
+          ls /Applications | grep -i xcode || echo "No Xcode in /Applications"
           swift --version
           uname -a
 
@@ -44,7 +46,15 @@ jobs:
         # Mach-O via `--arch arm64 --arch x86_64`; build-app.sh handles the
         # build-output-path difference (apple/Products/Release vs the
         # single-arch arm64-apple-macosx/release).
-        run: ./scripts/build-app.sh release universal
+        #
+        # macos-14 runner ships with Xcode 15 at /Applications/Xcode.app;
+        # universal build needs xcbuild from there (CLT alone is not enough).
+        # `sudo xcode-select -s` ensures we point at Xcode's toolchain, not
+        # the bare Command Line Tools dir (which lacks xcbuild).
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          xcode-select -p
+          ./scripts/build-app.sh release universal
 
       - name: Verify bundle signature + structure
         run: |
