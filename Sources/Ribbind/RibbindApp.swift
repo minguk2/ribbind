@@ -31,7 +31,12 @@ struct RibbindApp: App {
     /// gets stripped.
     @ViewBuilder
     private static var menuBarLabel: some View {
-        if let url = Bundle.module.url(forResource: "MenuBarIcon", withExtension: "pdf"),
+        // ResourceLookup instead of Bundle.module — see Catalog.load() comment.
+        if let url = ResourceLookup.url(
+               in: "Ribbind_Ribbind.bundle",
+               forResource: "MenuBarIcon",
+               withExtension: "pdf"
+           ),
            let nsImage = NSImage(contentsOf: url) {
             let _ = nsImage.isTemplate = true
             Image(nsImage: nsImage)

@@ -7,9 +7,33 @@ import Carbon.HIToolbox
 extension String {
 	/**
 	Makes the string localizable.
+
+	**Ribbind patch (vendored divergence from upstream v2.4.0):** uses an
+	explicit Contents/Resources fallback for resolving the localization
+	bundle, because SPM's auto-generated `Bundle.module` only checks the
+	binary's sibling directory + an absolute `.build/...` path baked at
+	compile time. The second path doesn't exist on a user's Mac after they
+	download the .app from GitHub Releases (the path is on the CI runner),
+	and the first path doesn't match where `scripts/build-app.sh` copies
+	the SPM resource bundle (into `Contents/Resources/`). Without this
+	patch, `Bundle.module`'s `fatalError` crashes the app at first
+	localized-string access.
 	*/
 	var localized: String {
-		NSLocalizedString(self, bundle: .module, comment: self)
+		let bundleName = "Ribbind_KeyboardShortcuts.bundle"
+		let candidates = [
+			Bundle.main.bundleURL
+				.appendingPathComponent("Contents/Resources")
+				.appendingPathComponent(bundleName),
+			Bundle.main.bundleURL.appendingPathComponent(bundleName),
+		]
+		for url in candidates {
+			if let bundle = Bundle(url: url) {
+				return NSLocalizedString(self, bundle: bundle, comment: self)
+			}
+		}
+		// Last resort: Bundle.main lookup (will return the key if nothing matches).
+		return NSLocalizedString(self, comment: self)
 	}
 }
 

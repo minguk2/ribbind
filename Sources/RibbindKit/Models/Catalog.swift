@@ -33,7 +33,17 @@ public final class Catalog: ObservableObject {
     }
 
     public func load() {
-        guard let url = Bundle.module.url(forResource: "commands", withExtension: "json") else {
+        // ResourceLookup bypasses SPM's auto-generated `Bundle.module` accessor.
+        // The accessor falls back to an absolute `.build/...` path baked at
+        // compile time, which exists on the builder's machine but NOT on a
+        // user's Mac who downloaded the .app from GitHub Releases — that
+        // mismatch crashed v0.6.1's first CI build at launch. See the
+        // helper's docs for the candidate-path resolution order.
+        guard let url = ResourceLookup.url(
+            in: "Ribbind_RibbindKit.bundle",
+            forResource: "commands",
+            withExtension: "json"
+        ) else {
             loadError = "commands.json not found in bundle"
             return
         }
