@@ -2,7 +2,7 @@
 
 🌐 **English** · [한국어](./README.ko.md)
 
-Bind any keyboard shortcut to any Microsoft Word, PowerPoint, or Google Chrome command on macOS — including Ribbon-only buttons that System Settings can't reach. Currently **v0.6.0**.
+Bind any keyboard shortcut to any Microsoft Word, PowerPoint, or Google Chrome command on macOS — including Ribbon-only buttons that System Settings can't reach. Currently **v0.6.1**.
 
 [![Support on Ko-fi](https://img.shields.io/badge/Support%20on-Ko--fi-ff5e5b?logo=ko-fi&logoColor=white&style=for-the-badge)](https://ko-fi.com/minguk2)
 
@@ -106,7 +106,9 @@ The **General** tab shows live status: Accessibility check, Office detection, La
 
 **Shortcut does nothing?** Check (1) the target app is foreground, (2) Accessibility is granted to the *current* `/Applications/Ribbind.app` (rebuilds rotate the signature — re-add Ribbind in System Settings → Accessibility), (3) PowerPoint menu shortcuts only register at launch — quit and reopen.
 
-**Chrome ⌃⌘T does nothing or shows a notification?** Both setup gates must be green in Settings → Google Chrome. Click *Initialize* and follow the prompt for the first model download.
+**Chrome ⌃⌘T does nothing or shows a notification?** Both setup gates must be green in Settings → Google Chrome. Click *Initialize* and follow the prompt for the first model download. On a large page the first press can take a few seconds to translate — wait for the page to settle before pressing again. Press too soon and you'll see a *Translation in progress* notification (the next press is held back so the toggle state stays consistent).
+
+**Notification says "Couldn't detect page language"?** The page has no `<html lang>` attribute and Chrome's `LanguageDetector` API didn't return a result. Reload the tab or pick one with normal HTML.
 
 **Apple Developer account needed?** No. The install uses Apple's free Command Line Tools.
 

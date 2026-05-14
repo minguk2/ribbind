@@ -53,6 +53,20 @@ public enum RibbonButtonClicker {
         /// Translator.create / availability / translate failed for an
         /// unexpected reason — payload is the JS-side error message.
         case chromeTranslateInternal(String)
+        /// A previous chrome.Translate IIFE is still running on the same
+        /// Chrome page. The JS-side `window._ribbindBusy` lock rejected this
+        /// fire to prevent two toggles from racing on the same DOM (which
+        /// would corrupt the `__ribbindOrig` per-node store and leave the
+        /// page in a half-translated state). The user is told to wait.
+        case chromeTranslateBusy
+        /// The page has no `<html lang>` attribute AND Chrome's
+        /// `LanguageDetector` API was unavailable or failed. Without a
+        /// reliable source language the previous silent `en` fallback could
+        /// trigger wrong-direction translation that visibly does nothing yet
+        /// sets the FLAG — which then makes TOGGLE OFF fire on the next
+        /// press, again visibly doing nothing, masquerading as "toggle
+        /// broken". Surfacing this explicitly is the fix.
+        case chromeTranslateDetectorUnavailable
 
         public var description: String {
             switch self {
@@ -74,6 +88,10 @@ public enum RibbonButtonClicker {
                 return "Chrome 138+ required for built-in Translator API."
             case .chromeTranslateInternal(let m):
                 return "Translator failed: \(m)"
+            case .chromeTranslateBusy:
+                return "A translation toggle is still running on this page. Wait a moment, then try again."
+            case .chromeTranslateDetectorUnavailable:
+                return "Couldn't detect this page's language. The page has no <html lang> attribute and Chrome's LanguageDetector API didn't return a result."
             }
         }
     }
@@ -285,8 +303,19 @@ public enum RibbonButtonClicker {
     /// once with their mouse. Ribbind's Settings → Google Chrome tab surfaces a
     /// status indicator + "Open Chrome menu" helper for this.
     public static func chromeTranslateToggle(targetLanguage: String) throws {
-        // Clear any previous result so polling reads only THIS run's outcome.
-        _ = try? ChromeJSAutomation.executeJS("localStorage.removeItem('_ribbindLastResult'); ''")
+        // Clear BOTH the result key and the progress heartbeat. The new JS
+        // (chromeTranslateToggleJS) writes `_ribbindProgress` every 20 nodes
+        // during a long TOGGLE ON so the Swift poll below can tell "still
+        // working" apart from "hung" — without that distinction the previous
+        // 1.2 s flat timeout was the root cause of the user-visible "toggle
+        // doesn't go back and forth" bug (translation took >1.2 s, Swift
+        // returned "assumed success", user re-fired thinking nothing
+        // happened, second fire entered TOGGLE OFF on a half-translated
+        // page → corrupted state).
+        _ = try? ChromeJSAutomation.executeJS(
+            "localStorage.removeItem('_ribbindLastResult'); "
+            + "localStorage.removeItem('_ribbindProgress'); ''"
+        )
 
         let js = chromeTranslateToggleJS(targetLanguage: targetLanguage)
         do {
@@ -300,28 +329,44 @@ public enum RibbonButtonClicker {
             throw Failure.elementNotFound("chromeTranslateToggle JS failed: \(error)")
         }
 
-        // The toggle JS is an async IIFE — `execute javascript` returns
-        // immediately with an empty value. The JS continues in the page and
-        // eventually writes its result to `localStorage._ribbindLastResult`.
-        // Poll briefly to catch fast-fail cases (GESTURE_REQUIRED, SAME_LANGUAGE,
-        // etc.) so the BindingCoordinator can surface a notification. For
-        // long-running successes (large pages) the poll times out and we
-        // return success — the translation continues in the page; the user
-        // sees text change progressively.
-        let deadline = Date().addingTimeInterval(1.2)
+        // Adaptive poll: two-tier timeout.
+        //   - Hard cap (30 s)  — absolute upper bound; very large pages
+        //                        still need a defined exit.
+        //   - Soft cap (2 s of no progress) — resets every time the JS
+        //                        bumps `_ribbindProgress`. Lets short pages
+        //                        finish near-instantly while still leaving
+        //                        actively-working long pages alone.
+        // The IIFE writes the result to `_ribbindLastResult` exactly once
+        // at its end (TOGGLE OFF or TOGGLE ON or any error). Until then
+        // we treat progress as the liveness signal.
+        let absoluteCap = Date().addingTimeInterval(30.0)
+        var quietCap = Date().addingTimeInterval(2.0)
+        var lastProgress = ""
         var raw: String? = nil
-        while Date() < deadline {
-            if let r = try? ChromeJSAutomation.executeJS("localStorage.getItem('_ribbindLastResult') || ''"),
-               !r.isEmpty {
+        while Date() < absoluteCap {
+            if let r = try? ChromeJSAutomation.executeJS(
+                "localStorage.getItem('_ribbindLastResult') || ''"
+            ), !r.isEmpty {
                 raw = r
                 break
             }
-            Thread.sleep(forTimeInterval: 0.075)
+            if let p = try? ChromeJSAutomation.executeJS(
+                "localStorage.getItem('_ribbindProgress') || ''"
+            ), !p.isEmpty, p != lastProgress {
+                lastProgress = p
+                quietCap = Date().addingTimeInterval(2.0)
+            }
+            if Date() > quietCap {
+                NSLog("[Ribbind] chromeTranslateToggle: quiet timeout (no progress in 2 s, last progress: %@)",
+                      lastProgress.isEmpty ? "(none)" : lastProgress)
+                return
+            }
+            Thread.sleep(forTimeInterval: 0.1)
         }
 
         guard let raw, !raw.isEmpty else {
-            // Result not in yet — assume in flight, caller treats as success.
-            NSLog("[Ribbind] chromeTranslateToggle: result still in flight (long page?), assuming success")
+            NSLog("[Ribbind] chromeTranslateToggle: 30 s absolute cap reached without result (last progress: %@)",
+                  lastProgress.isEmpty ? "(none)" : lastProgress)
             return
         }
         NSLog("[Ribbind] chromeTranslateToggle result: %@", raw)
@@ -344,6 +389,10 @@ public enum RibbonButtonClicker {
             throw Failure.chromeTranslatePairUnavailable(source: source, target: target)
         case "API_MISSING":
             throw Failure.chromeTranslateAPIMissing
+        case "BUSY":
+            throw Failure.chromeTranslateBusy
+        case "DETECTOR_UNAVAILABLE":
+            throw Failure.chromeTranslateDetectorUnavailable
         default:
             let detail = (obj["detail"] as? String) ?? code
             throw Failure.chromeTranslateInternal(detail)
@@ -373,123 +422,184 @@ public enum RibbonButtonClicker {
             const root = document.documentElement;
             const FLAG = 'ribbindTranslated';
             const STORE = '__ribbindOrig';
+            const BUSY = '_ribbindBusy';
 
             function out(o) {
                 try { localStorage.setItem('_ribbindLastResult', JSON.stringify(o)); } catch (_) {}
                 return JSON.stringify(o);
             }
+            function progress(n) {
+                try { localStorage.setItem('_ribbindProgress', String(n)); } catch (_) {}
+            }
 
-            // ---- TOGGLE OFF: restore originals ----
-            if (root.dataset[FLAG]) {
-                let restored = 0;
-                const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null);
+            // Page-level concurrency lock. The Swift side fires this IIFE via
+            // `execute javascript` which returns immediately while the async
+            // body runs in the tab. If the user re-fires before the previous
+            // run completes, two IIFEs would race on the same DOM — Fire #2
+            // sees FLAG (still unset by Fire #1) and re-enters TOGGLE ON,
+            // overwriting __ribbindOrig with already-translated text. Net
+            // result: TOGGLE OFF later restores translated text "as if it
+            // were the original", which the user perceives as "toggle doesn't
+            // go back and forth". The lock blocks that path cleanly with a
+            // typed BUSY error the Swift side surfaces as a notification.
+            if (window[BUSY]) {
+                return out({ok: false, code: 'BUSY'});
+            }
+            window[BUSY] = true;
+
+            try {
+                // ---- TOGGLE OFF: restore originals ----
+                if (root.dataset[FLAG]) {
+                    let restored = 0, failed = 0;
+                    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null);
+                    const nodes = [];
+                    while (walker.nextNode()) nodes.push(walker.currentNode);
+                    for (const n of nodes) {
+                        // Per-node try/catch — one node's textContent setter
+                        // throwing (e.g., XSS protection, detached node) must
+                        // not crash the whole IIFE. Without this, a single
+                        // bad node would leave FLAG set + __ribbindOrig still
+                        // attached to every remaining node → subsequent fires
+                        // see FLAG and try to restore again → garbage state.
+                        try {
+                            if (n[STORE] !== undefined) {
+                                n.textContent = n[STORE];
+                                delete n[STORE];
+                                restored++;
+                            }
+                        } catch (_) { failed++; }
+                    }
+                    delete root.dataset[FLAG];
+                    return out({ok: true, action: 'restored', count: restored, failed: failed});
+                }
+
+                // ---- TOGGLE ON ----
+                if (typeof Translator === 'undefined') {
+                    return out({ok: false, code: 'API_MISSING', detail: 'Chrome 138+ required for built-in Translator API'});
+                }
+
+                const target = '\(targetLanguage)';
+
+                // Source detection: <html lang> first (cheap, accurate on
+                // well-formed pages), then LanguageDetector, then fail. The
+                // previous silent `sourceLang = 'en'` fallback was a quiet
+                // bug source — non-English pages with no detector would get
+                // translated en→target via Chrome's translator, which often
+                // returns input unchanged for unrecognized-source text. That
+                // visibly does nothing yet sets FLAG, making the next fire
+                // a "restored" no-op the user perceives as broken toggle.
+                let sourceLang = null;
+                const htmlLang = root.getAttribute('lang');
+                if (htmlLang && htmlLang.length >= 2) {
+                    sourceLang = htmlLang.split('-')[0].toLowerCase();
+                }
+                if (!sourceLang && typeof LanguageDetector !== 'undefined') {
+                    try {
+                        const detector = await LanguageDetector.create();
+                        const sample = (document.body.innerText || '').substring(0, 1000);
+                        if (sample.length >= 5) {
+                            const results = await detector.detect(sample);
+                            if (results && results.length > 0 && results[0].detectedLanguage) {
+                                sourceLang = results[0].detectedLanguage;
+                            }
+                        }
+                    } catch (_) { /* fall through to DETECTOR_UNAVAILABLE */ }
+                }
+                if (!sourceLang) {
+                    return out({ok: false, code: 'DETECTOR_UNAVAILABLE'});
+                }
+                if (sourceLang === target) {
+                    return out({ok: false, code: 'SAME_LANGUAGE', source: sourceLang, target: target});
+                }
+
+                // Check model availability before attempting create
+                let availability;
+                try {
+                    availability = await Translator.availability({sourceLanguage: sourceLang, targetLanguage: target});
+                } catch (e) {
+                    return out({ok: false, code: 'AVAILABILITY_FAILED', source: sourceLang, target: target, detail: String(e.message || e)});
+                }
+                if (availability === 'unavailable') {
+                    return out({ok: false, code: 'PAIR_UNAVAILABLE', source: sourceLang, target: target});
+                }
+
+                let translator;
+                try {
+                    translator = await Translator.create({sourceLanguage: sourceLang, targetLanguage: target});
+                } catch (e) {
+                    const msg = String(e.message || e);
+                    if (msg.toLowerCase().includes('user gesture')) {
+                        return out({
+                            ok: false, code: 'GESTURE_REQUIRED',
+                            source: sourceLang, target: target,
+                            availability: availability,
+                            hint: 'Open Ribbind Settings → Google Chrome → Initialize translation model'
+                        });
+                    }
+                    return out({ok: false, code: 'CREATE_FAILED', source: sourceLang, target: target, detail: msg});
+                }
+
+                // Walk DOM text nodes
+                const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEXTAREA', 'INPUT', 'CODE', 'PRE']);
+                const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+                    acceptNode: function(n) {
+                        const text = n.textContent;
+                        if (!text || text.trim().length < 2) return NodeFilter.FILTER_REJECT;
+                        let p = n.parentNode;
+                        while (p) {
+                            if (p.nodeType === Node.ELEMENT_NODE && SKIP_TAGS.has(p.tagName)) {
+                                return NodeFilter.FILTER_REJECT;
+                            }
+                            p = p.parentNode;
+                        }
+                        return NodeFilter.FILTER_ACCEPT;
+                    }
+                });
                 const nodes = [];
                 while (walker.nextNode()) nodes.push(walker.currentNode);
-                for (const n of nodes) {
-                    if (n[STORE] !== undefined) {
-                        n.textContent = n[STORE];
-                        delete n[STORE];
-                        restored++;
-                    }
+
+                // Set FLAG BEFORE the translate loop, not after. With the
+                // old "set at end" path, any concurrent fire that snuck past
+                // the BUSY guard (e.g., if the Swift side disabled it for
+                // testing) would see FLAG unset, enter TOGGLE ON again, and
+                // overwrite __ribbindOrig with the already-mutated text.
+                // Setting upfront makes the page state self-describing at
+                // every moment: "FLAG present ⇒ TOGGLE OFF is the right
+                // next action".
+                root.dataset[FLAG] = target;
+
+                let translated = 0, failed = 0;
+                for (let i = 0; i < nodes.length; i++) {
+                    const n = nodes[i];
+                    const orig = n.textContent;
+                    try {
+                        const tr = await translator.translate(orig);
+                        // External-cancel path: a separate script (or a
+                        // future "abort" feature) could delete the FLAG to
+                        // stop us mid-loop. Detect and bail cleanly so we
+                        // don't keep stamping __ribbindOrig.
+                        if (!root.dataset[FLAG]) break;
+                        n[STORE] = orig;
+                        n.textContent = tr;
+                        translated++;
+                    } catch (_) { failed++; }
+                    // Heartbeat every 20 nodes so the Swift adaptive poll
+                    // knows the IIFE is alive and resets its 2 s quiet cap.
+                    if (i % 20 === 0) progress(translated);
                 }
-                delete root.dataset[FLAG];
-                return out({ok: true, action: 'restored', count: restored});
+                progress(translated);
+
+                return out({
+                    ok: true, action: 'translated',
+                    source: sourceLang, target: target,
+                    translated: translated, failed: failed, total: nodes.length
+                });
+            } finally {
+                // Always release the lock — try/finally guarantees this even
+                // if a `return` above short-circuits or an unexpected throw
+                // escapes.
+                delete window[BUSY];
             }
-
-            // ---- TOGGLE ON ----
-            if (typeof Translator === 'undefined') {
-                return out({ok: false, code: 'API_MISSING', detail: 'Chrome 138+ required for built-in Translator API'});
-            }
-
-            const target = '\(targetLanguage)';
-
-            // Detect source language (fall back to en if detector unavailable)
-            let sourceLang = 'en';
-            try {
-                if (typeof LanguageDetector !== 'undefined') {
-                    const detector = await LanguageDetector.create();
-                    const sample = (document.body.innerText || '').substring(0, 1000);
-                    if (sample.length >= 5) {
-                        const results = await detector.detect(sample);
-                        if (results && results.length > 0 && results[0].detectedLanguage) {
-                            sourceLang = results[0].detectedLanguage;
-                        }
-                    }
-                }
-            } catch (_) { /* keep default 'en' */ }
-
-            if (sourceLang === target) {
-                return out({ok: false, code: 'SAME_LANGUAGE', source: sourceLang, target: target});
-            }
-
-            // Check model availability before attempting create
-            let availability;
-            try {
-                availability = await Translator.availability({sourceLanguage: sourceLang, targetLanguage: target});
-            } catch (e) {
-                return out({ok: false, code: 'AVAILABILITY_FAILED', source: sourceLang, target: target, detail: String(e.message || e)});
-            }
-            if (availability === 'unavailable') {
-                return out({ok: false, code: 'PAIR_UNAVAILABLE', source: sourceLang, target: target});
-            }
-
-            // Create the translator. If model isn't downloaded, this requires
-            // a user gesture — we'll surface that as a typed error.
-            let translator;
-            try {
-                translator = await Translator.create({sourceLanguage: sourceLang, targetLanguage: target});
-            } catch (e) {
-                const msg = String(e.message || e);
-                if (msg.toLowerCase().includes('user gesture')) {
-                    return out({
-                        ok: false, code: 'GESTURE_REQUIRED',
-                        source: sourceLang, target: target,
-                        availability: availability,
-                        hint: 'Open Ribbind Settings → Google Chrome → Initialize translation model'
-                    });
-                }
-                return out({ok: false, code: 'CREATE_FAILED', source: sourceLang, target: target, detail: msg});
-            }
-
-            // Walk DOM text nodes
-            const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEXTAREA', 'INPUT', 'CODE', 'PRE']);
-            const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
-                acceptNode: function(n) {
-                    const text = n.textContent;
-                    if (!text || text.trim().length < 2) return NodeFilter.FILTER_REJECT;
-                    let p = n.parentNode;
-                    while (p) {
-                        if (p.nodeType === Node.ELEMENT_NODE && SKIP_TAGS.has(p.tagName)) {
-                            return NodeFilter.FILTER_REJECT;
-                        }
-                        p = p.parentNode;
-                    }
-                    return NodeFilter.FILTER_ACCEPT;
-                }
-            });
-            const nodes = [];
-            while (walker.nextNode()) nodes.push(walker.currentNode);
-
-            // Translate sequentially. The on-device model is fast (~few ms per
-            // short string); sequential is simpler and keeps memory usage
-            // bounded on long pages.
-            let translated = 0, failed = 0;
-            for (const n of nodes) {
-                const orig = n.textContent;
-                try {
-                    const tr = await translator.translate(orig);
-                    n[STORE] = orig;
-                    n.textContent = tr;
-                    translated++;
-                } catch (e) { failed++; }
-            }
-
-            root.dataset[FLAG] = target;
-            return out({
-                ok: true, action: 'translated',
-                source: sourceLang, target: target,
-                translated: translated, failed: failed, total: nodes.length
-            });
         })();
         """
     }

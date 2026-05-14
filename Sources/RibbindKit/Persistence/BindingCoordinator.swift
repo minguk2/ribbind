@@ -419,6 +419,16 @@ public final class BindingCoordinator: ObservableObject {
                         title: "Translation failed",
                         body: m
                     )
+                case .chromeTranslateBusy:
+                    RibbindNotifier.notify(
+                        title: "Translation in progress",
+                        body: "A previous Translate Page run is still working on this tab. Wait a moment, then try again — pressing the shortcut while the page is mid-translation would corrupt the toggle state."
+                    )
+                case .chromeTranslateDetectorUnavailable:
+                    RibbindNotifier.notify(
+                        title: "Couldn't detect page language",
+                        body: "This page has no <html lang> attribute and Chrome's LanguageDetector API didn't return a result. Reload the page or pick a different tab."
+                    )
                 default:
                     NSLog("[Ribbind] chromeTranslateToggle failed for %@: %@",
                           command.id, String(describing: f))
