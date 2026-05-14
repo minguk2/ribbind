@@ -1,0 +1,98 @@
+name: Release
+
+# Tag-triggered only. We deliberately do NOT run on every push — a previous
+# build.yml (per-commit) workflow consistently red-failed because it called
+# scripts/dead-field-check.sh which has since been removed, and per-commit
+# builds add no value when the dev loop already runs validator + build-app
+# locally before each push. Tags are the canonical "ship this" signal.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  # Required for softprops/action-gh-release to create the Release object
+  # and upload .zip / .sha256 assets. Without this the action 403s.
+  contents: write
+
+jobs:
+  release:
+    # macos-14 = Apple Silicon (arm64) with recent Xcode preinstalled. Matches
+    # the user's dev machine arch so the shipped binary won't surprise them on
+    # arm64. (x86_64 users can still rebuild from source via the README's
+    # terminal install path — universal build is a future enhancement once
+    # demand is verified.)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcode-select -p || true
+          swift --version
+          uname -a
+
+      # Tier 1 — fail fast on Codable round-trips, catalog hex invariants,
+      # encoder safety. ValidationHarness skips fixture-dependent checks
+      # automatically when Office isn't installed and the user's plist
+      # absent — CI is exactly that environment.
+      - name: Run ValidationHarness (Tier 1, no fixtures on CI)
+        run: swift run -c release ValidationHarness
+
+      - name: Build .app bundle (arm64, ad-hoc signed)
+        run: ./scripts/build-app.sh release
+
+      - name: Verify bundle signature + structure
+        run: |
+          codesign -dvv dist/Ribbind.app
+          codesign --verify --verbose=2 dist/Ribbind.app
+          test -d dist/Ribbind.app
+          test -x dist/Ribbind.app/Contents/MacOS/Ribbind
+          test -f dist/Ribbind.app/Contents/Info.plist
+          test -f dist/Ribbind.app/Contents/Resources/AppIcon.icns
+
+      - name: Compress .app + checksum
+        run: |
+          cd dist
+          # `ditto -c -k --keepParent` preserves the .app bundle structure,
+          # ACLs, and extended attributes through the zip — `zip -r` does
+          # NOT and produces unusable .app archives on macOS.
+          ditto -c -k --keepParent Ribbind.app Ribbind-${{ github.ref_name }}.zip
+          shasum -a 256 Ribbind-${{ github.ref_name }}.zip > Ribbind-${{ github.ref_name }}.zip.sha256
+          ls -lh Ribbind-${{ github.ref_name }}.zip
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/Ribbind-${{ github.ref_name }}.zip
+            dist/Ribbind-${{ github.ref_name }}.zip.sha256
+          body: |
+            ## Install (drag-and-drop)
+
+            1. Download **Ribbind-${{ github.ref_name }}.zip** below.
+            2. Double-click to unzip — you'll get `Ribbind.app`.
+            3. Drag `Ribbind.app` into your **/Applications** folder.
+            4. **First launch only**: right-click `Ribbind.app` → **Open** → click **Open Anyway**.
+               This is a one-time Gatekeeper bypass — the app is ad-hoc signed (free, no Apple
+               Developer account), so macOS asks for confirmation on first run. After that,
+               double-clicking launches Ribbind normally like any other app.
+
+            ## First-run setup (one-time, system dialogs)
+
+            - **Accessibility** — System prompts on first hotkey use. Click *Open System Settings*
+              → enable **Ribbind**. Required so global hotkeys are captured before Word /
+              PowerPoint sees them.
+            - **Automation** (Word / PowerPoint / Chrome) — System prompts once per app on the
+              first shortcut you fire for it. Click *OK*. Silent thereafter.
+
+            ## What's bound out of the box
+
+            Nothing. Open **Ribbind → Settings** from the menu bar icon and assign shortcuts.
+
+            ## Building from source instead
+
+            If you'd rather build locally instead of downloading: see the *Build from source*
+            section in [README.md](https://github.com/minguk2/ribbind#build-from-source).

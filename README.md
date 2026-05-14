@@ -8,17 +8,35 @@ Bind any keyboard shortcut to any Microsoft Word, PowerPoint, or Google Chrome c
 
 ---
 
-## Install / Update
+## Install
 
-Open Terminal (`⌘ + Space` → `Terminal`).
+**1. Download Ribbind.app** from the [latest release](https://github.com/minguk2/ribbind/releases/latest) — grab `Ribbind-v0.6.1.zip`.
 
-**1. Install Apple Command Line Tools** (one-time, free):
+**2. Double-click the .zip** to unpack. You'll get `Ribbind.app`.
 
-```sh
-xcode-select --install
-```
+**3. Drag `Ribbind.app` into `/Applications`.**
 
-**2. Run the install block.** Same command for first install and every update — wipes any prior source clone, fetches the latest from GitHub, builds, and installs into `/Applications/`:
+**4. First launch only:** right-click `Ribbind.app` in `/Applications` → **Open** → click **Open Anyway**.
+
+This is a one-time Gatekeeper bypass — Ribbind is ad-hoc signed (free; no paid Apple Developer account), so macOS asks for confirmation on the first run only. After this, double-clicking launches Ribbind normally like any other app.
+
+Ribbind lives in the menu bar (no Dock icon). Open Settings from the menu bar icon, or `⌘,`.
+
+**5. First-run permissions** — single click each, when system dialogs prompt:
+- **Accessibility** (on first hotkey use): captures shortcuts before Word / PowerPoint / Chrome see them.
+- **Automation** (Word / PowerPoint / Chrome): applies the bound effect via Apple Events. Prompts once per app on the first shortcut you fire for it.
+
+### Update
+
+Download the new release zip, drag the new `Ribbind.app` into `/Applications` (replace the old one), and right-click → Open it once. Your shortcuts, picker values, and Accessibility grant carry over automatically.
+
+After replacing the app, you may need to remove and re-add Ribbind in System Settings → Privacy & Security → Accessibility (the code signature rotates per release).
+
+---
+
+## Build from source (optional)
+
+If you'd rather build locally instead of downloading: open Terminal, install Apple's free Command Line Tools (`xcode-select --install`), then run:
 
 ```sh
 mkdir -p ~/Downloads && cd ~/Downloads
@@ -32,13 +50,7 @@ mv dist/Ribbind.app /Applications/
 open /Applications/Ribbind.app
 ```
 
-Build is ~30 s. Ribbind lives in the menu bar (no Dock icon).
-
-**3. Grant Accessibility** when prompted, plus **Automation** the first time you fire a Word / PowerPoint / Chrome shortcut. Each is a single click in a system dialog.
-
-After updates, you may need to remove and re-add Ribbind in System Settings → Privacy & Security → Accessibility (rebuilds rotate the code signature).
-
-Open Settings from the menu bar icon, or `⌘,`.
+Same block works for first install and updates. Build is ~30 s. After updates, re-grant Accessibility (rebuilds rotate the signature).
 
 ---
 
@@ -104,19 +116,21 @@ The **General** tab shows live status: Accessibility check, Office detection, La
 
 ## FAQ
 
-**Shortcut does nothing?** Check (1) the target app is foreground, (2) Accessibility is granted to the *current* `/Applications/Ribbind.app` (rebuilds rotate the signature — re-add Ribbind in System Settings → Accessibility), (3) PowerPoint menu shortcuts only register at launch — quit and reopen.
+**Shortcut does nothing?** Check (1) the target app is foreground, (2) Accessibility is granted to the *current* `/Applications/Ribbind.app` (each release rotates the signature — re-add Ribbind in System Settings → Accessibility), (3) PowerPoint menu shortcuts only register at launch — quit and reopen.
+
+**macOS says "Ribbind cannot be opened because Apple cannot check it"?** That's Gatekeeper on the very first launch. Right-click `Ribbind.app` in Finder → **Open** → **Open Anyway**. macOS remembers your choice; double-click works normally after this.
 
 **Chrome ⌃⌘T does nothing or shows a notification?** Both setup gates must be green in Settings → Google Chrome. Click *Initialize* and follow the prompt for the first model download. On a large page the first press can take a few seconds to translate — wait for the page to settle before pressing again. Press too soon and you'll see a *Translation in progress* notification (the next press is held back so the toggle state stays consistent).
 
 **Notification says "Couldn't detect page language"?** The page has no `<html lang>` attribute and Chrome's `LanguageDetector` API didn't return a result. Reload the tab or pick one with normal HTML.
 
-**Apple Developer account needed?** No. The install uses Apple's free Command Line Tools.
+**Apple Developer account needed?** No. The release `.app` is ad-hoc signed (free, no paid account). The one trade-off is the first-launch *right-click → Open* step above.
 
 **Internet?** Only Chrome's one-time model download. Translation runs on-device after that. No telemetry, no auto-update.
 
 **Will it conflict with my Word customizations?** No — Ribbind writes to the same files Word's *Customize Keyboard* uses. Most-recent assignment wins on collision.
 
-**Update?** Run the same install block at the top of this README. It wipes the prior source clone and rebuilds from the latest remote — the running app and old `/Applications/Ribbind.app` are replaced in one shot.
+**Update?** Two paths. (1) Download the newer release zip, drag the new `Ribbind.app` into `/Applications` (replacing the old one), and right-click → Open it once. (2) Or rerun the *Build from source* block above — it pulls the latest remote and replaces the installed app in one shot. Either way, your shortcut bindings and picker values carry over.
 
 ---
 
