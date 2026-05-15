@@ -2,7 +2,7 @@
 
 🌐 **English** · [한국어](./README.ko.md)
 
-Bind any keyboard shortcut to any Microsoft Word, PowerPoint, or Google Chrome command on macOS — including Ribbon-only buttons that System Settings can't reach. Currently **v0.6.3**.
+Bind any keyboard shortcut to any Microsoft Word, PowerPoint, or Google Chrome command on macOS — including Ribbon-only buttons that System Settings can't reach. Currently **v0.6.4**.
 
 [![Support on Ko-fi](https://img.shields.io/badge/Support%20on-Ko--fi-ff5e5b?logo=ko-fi&logoColor=white&style=for-the-badge)](https://ko-fi.com/minguk2)
 
@@ -10,7 +10,7 @@ Bind any keyboard shortcut to any Microsoft Word, PowerPoint, or Google Chrome c
 
 ## Install
 
-**1. Download Ribbind.app** from the [latest release](https://github.com/minguk2/ribbind/releases/latest) — grab `Ribbind-v0.6.3.zip`.
+**1. Download Ribbind.app** from the [latest release](https://github.com/minguk2/ribbind/releases/latest) — grab `Ribbind-v0.6.4.zip`.
 
 **2. Double-click the .zip** to unpack. You'll get `Ribbind.app`.
 

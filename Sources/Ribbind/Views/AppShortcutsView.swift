@@ -69,22 +69,33 @@ struct AppShortcutsView: View {
                     description: Text("Try clearing the search or filter.")
                 )
                 .frame(maxHeight: .infinity)
+            } else if app == .chrome {
+                // Chrome ships a single command — no need for the LazyVGrid
+                // adaptive layout (which left a huge empty gap above the row
+                // on wide windows because the grid sized itself to the
+                // available space). Tight VStack + trailing Spacer keeps
+                // the row + setup card snug under the PAGE header.
+                VStack(alignment: .leading, spacing: 16) {
+                    ForEach(groupedFiltered, id: \.category) { entry in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(entry.category.uppercased())
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(.secondary)
+                            ForEach(entry.items) { cmd in
+                                ShortcutRow(command: cmd)
+                            }
+                        }
+                    }
+                    ChromeJSAutomationSetupRow()
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 4)
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
                         ForEach(groupedFiltered, id: \.category) { entry in
                             categoryBlock(entry)
-                        }
-                        // Chrome's setup status (AS-JS toggle + model download)
-                        // belongs UNDER the shortcut binding row, not above
-                        // it. Once setup is green the binding row is the
-                        // thing users return to — putting it on top reduces
-                        // scrolling/scanning to find the actual hotkey. The
-                        // setup card stays visible below for the one-time
-                        // gates and as a health indicator.
-                        if app == .chrome {
-                            ChromeJSAutomationSetupRow()
-                                .padding(.top, 8)
                         }
                     }
                     .padding(.horizontal, 4)
