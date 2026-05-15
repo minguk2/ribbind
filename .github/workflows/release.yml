@@ -65,7 +65,26 @@ jobs:
           test -f dist/Ribbind.app/Contents/Info.plist
           test -f dist/Ribbind.app/Contents/Resources/AppIcon.icns
 
-      - name: Compress .app + checksum
+      - name: Build .dmg installer (drag-to-/Applications UX)
+        # A DMG is the macOS-standard distribution format: double-click → a
+        # window opens with Ribbind.app on one side and a shortcut to
+        # /Applications on the other → user drags. We assemble a staging dir
+        # with the .app + a symlink to /Applications, then hdiutil packs it
+        # into a compressed (UDZO) read-only image. ~2 MB.
+        run: |
+          rm -rf dmg-staging
+          mkdir dmg-staging
+          cp -R dist/Ribbind.app dmg-staging/
+          ln -s /Applications dmg-staging/Applications
+          hdiutil create -volname "Ribbind" \
+            -srcfolder dmg-staging \
+            -ov -format UDZO \
+            "dist/Ribbind-${{ github.ref_name }}.dmg"
+          shasum -a 256 "dist/Ribbind-${{ github.ref_name }}.dmg" \
+            > "dist/Ribbind-${{ github.ref_name }}.dmg.sha256"
+          ls -lh "dist/Ribbind-${{ github.ref_name }}.dmg"
+
+      - name: Also build a plain .zip (for users who script installs)
         run: |
           cd dist
           # `ditto -c -k --keepParent` preserves the .app bundle structure,
@@ -82,32 +101,45 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
+            dist/Ribbind-${{ github.ref_name }}.dmg
+            dist/Ribbind-${{ github.ref_name }}.dmg.sha256
             dist/Ribbind-${{ github.ref_name }}.zip
             dist/Ribbind-${{ github.ref_name }}.zip.sha256
           body: |
             ## Install (drag-and-drop)
 
-            1. Download **Ribbind-${{ github.ref_name }}.zip** below.
-            2. Double-click to unzip — you'll get `Ribbind.app`.
-            3. Drag `Ribbind.app` into your **/Applications** folder.
-            4. **First launch only**: right-click `Ribbind.app` → **Open** → click **Open Anyway**.
-               This is a one-time Gatekeeper bypass — the app is ad-hoc signed (free, no Apple
-               Developer account), so macOS asks for confirmation on first run. After that,
-               double-clicking launches Ribbind normally like any other app.
+            1. Download **Ribbind-${{ github.ref_name }}.dmg** below.
+            2. Double-click the DMG → a window opens with `Ribbind.app` and a shortcut to **Applications**.
+            3. **Drag `Ribbind.app` onto the Applications shortcut.** Done — installed.
+            4. Eject the DMG from Finder's sidebar (right-click → Eject).
 
-            ## First-run setup (one-time, system dialogs)
+            ### First launch (one-time Gatekeeper bypass)
 
-            - **Accessibility** — System prompts on first hotkey use. Click *Open System Settings*
-              → enable **Ribbind**. Required so global hotkeys are captured before Word /
-              PowerPoint sees them.
-            - **Automation** (Word / PowerPoint / Chrome) — System prompts once per app on the
-              first shortcut you fire for it. Click *OK*. Silent thereafter.
+            Ribbind is ad-hoc signed (free, no paid Apple Developer account). The first time
+            you open it, macOS asks you to confirm:
+
+            1. In Finder, open `/Applications` and **double-click `Ribbind.app`**.
+            2. macOS shows: *"Ribbind" cannot be opened because Apple cannot check it for malicious software.* — click **Done**.
+            3. Open **System Settings → Privacy & Security**.
+            4. Scroll down. You'll see a line: *"Ribbind" was blocked to protect your Mac.* — click **Open Anyway** next to it.
+            5. Authenticate with Touch ID / password.
+            6. Confirm **Open**. Ribbind launches and now lives in your menu bar (no Dock icon — look for the icon at the top-right of the screen).
+
+            After this once, double-clicking `Ribbind.app` opens it normally.
+
+            ## First-run permissions (single click each, when prompted)
+
+            - **Accessibility** — required for global hotkeys. The system dialog appears on first hotkey use; click *Open System Settings* and enable Ribbind in the Accessibility list.
+            - **Automation** (Word / PowerPoint / Chrome) — required to dispatch the bound effect via Apple Events. macOS prompts once per app on your first shortcut for that app.
 
             ## What's bound out of the box
 
             Nothing. Open **Ribbind → Settings** from the menu bar icon and assign shortcuts.
 
+            ## Alternative: plain .zip download
+
+            If you'd rather not deal with mounting a DMG, **Ribbind-${{ github.ref_name }}.zip** below is the same `Ribbind.app` packaged as a zip. Unzip, drag to `/Applications`, then follow the first-launch Gatekeeper steps above.
+
             ## Building from source instead
 
-            If you'd rather build locally instead of downloading: see the *Build from source*
-            section in [README.md](https://github.com/minguk2/ribbind#build-from-source).
+            See the *Build from source* section in [README.md](https://github.com/minguk2/ribbind#build-from-source).
