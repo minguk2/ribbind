@@ -2,8 +2,7 @@ import Foundation
 
 /// Replacement for SPM's auto-generated `Bundle.module` accessor.
 ///
-/// The SPM accessor (DerivedSources/resource_bundle_accessor.swift) only
-/// checks two paths:
+/// SPM's auto-generated accessor only checks two paths:
 ///   1. `Bundle.main.bundleURL/<bundleName>` — works for `swift run` / `swift
 ///      build` outputs where the binary and resource bundles are siblings in
 ///      `.build/<arch>/<config>/`, but NOT for a packaged macOS .app where
@@ -13,11 +12,23 @@ import Foundation
 ///      the machine that built the binary, so a CI-built .app crashes on
 ///      a user's Mac with `Fatal error: could not load resource bundle`.
 ///
-/// This helper extends the search to include `Contents/Resources/<bundleName>`
-/// so the same code path works for both swift-run AND a packaged .app
-/// regardless of which machine built it. We avoid `Bundle.module` entirely
-/// because its static-let initializer hits `fatalError` on miss — there's
-/// no way to recover gracefully.
+/// **Important:** SPM-generated resource bundles come in two layouts on
+/// disk depending on how the build was performed:
+///   - **Flat** (Command Line Tools / `swift build` direct): all resources
+///     sit at `<Bundle>/<file>`.
+///   - **Nested** (Xcode universal builds via `xcbuild` on `macos-14` CI):
+///     resources live at `<Bundle>/Contents/Resources/<file>` per macOS's
+///     standard bundle convention.
+///
+/// Both layouts ship in the wild — a contributor building locally with
+/// CLT produces flat bundles, the GitHub Actions release workflow produces
+/// nested bundles. The fix is to delegate lookup to `Bundle(url:)`, which
+/// knows about the macOS bundle convention and falls back gracefully to a
+/// flat directory if `Contents/Resources/` is absent. Doing the path-append
+/// ourselves (the original implementation here) only handled flat bundles
+/// and silently fell through to the fallback icon / empty catalog on CI
+/// builds — that bug is what made the menu bar icon revert to the keyboard
+/// SF Symbol and made every Word / PowerPoint default disappear in v0.6.2.
 public enum ResourceLookup {
     /// Locate a file inside an SPM-generated resource bundle.
     ///
@@ -32,24 +43,37 @@ public enum ResourceLookup {
         forResource name: String,
         withExtension ext: String
     ) -> URL? {
-        let candidates: [URL] = [
-            // (1) Packaged .app: build-app.sh copies SPM bundles into
-            //     `Contents/Resources/`. This is the canonical macOS bundle
-            //     resource location.
-            Bundle.main.bundleURL
-                .appendingPathComponent("Contents/Resources")
-                .appendingPathComponent(moduleBundleName),
-            // (2) `swift run` / direct binary launch from `.build/<arch>/
-            //     <config>/<exe>`: the bundle is a sibling of the binary
-            //     and `Bundle.main.bundleURL` is the parent directory.
-            Bundle.main.bundleURL.appendingPathComponent(moduleBundleName),
-        ]
-        for dir in candidates {
-            let candidate = dir.appendingPathComponent(name).appendingPathExtension(ext)
-            if FileManager.default.fileExists(atPath: candidate.path) {
-                return candidate
+        for bundleURL in candidateBundleURLs(named: moduleBundleName) {
+            if let bundle = Bundle(url: bundleURL),
+               let resource = bundle.url(forResource: name, withExtension: ext) {
+                return resource
             }
         }
         return nil
+    }
+
+    /// Locate the resource bundle itself (used by KeyboardShortcuts'
+    /// `String.localized` to pass a Bundle directly to NSLocalizedString).
+    public static func bundle(named moduleBundleName: String) -> Bundle? {
+        for bundleURL in candidateBundleURLs(named: moduleBundleName) {
+            if let bundle = Bundle(url: bundleURL) {
+                return bundle
+            }
+        }
+        return nil
+    }
+
+    private static func candidateBundleURLs(named moduleBundleName: String) -> [URL] {
+        [
+            // (1) Packaged .app: `scripts/build-app.sh` copies SPM resource
+            //     bundles into `Contents/Resources/`. Standard macOS layout.
+            Bundle.main.bundleURL
+                .appendingPathComponent("Contents/Resources")
+                .appendingPathComponent(moduleBundleName),
+            // (2) `swift run` / direct binary in `.build/<arch>/<config>/`:
+            //     the resource bundle is a sibling of the binary, and
+            //     `Bundle.main.bundleURL` is that directory.
+            Bundle.main.bundleURL.appendingPathComponent(moduleBundleName),
+        ]
     }
 }

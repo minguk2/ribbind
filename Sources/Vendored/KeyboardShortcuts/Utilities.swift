@@ -20,6 +20,11 @@ extension String {
 	localized-string access.
 	*/
 	var localized: String {
+		// Note: `Bundle(url:)` knows the macOS Contents/Resources convention,
+		// so it works for BOTH flat (CLT swift build) and nested (Xcode-style)
+		// SPM resource-bundle layouts. We were relying on manual path append
+		// before, which only handled the flat case — that's why the previous
+		// v0.6.2 CI build silently lost all localized strings.
 		let bundleName = "Ribbind_KeyboardShortcuts.bundle"
 		let candidates = [
 			Bundle.main.bundleURL
