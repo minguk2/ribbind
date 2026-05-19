@@ -337,45 +337,64 @@ public final class BindingCoordinator: ObservableObject {
             return RibbonHotkeyDispatcher.fireExecuteMso(idMso: idMso, targetApp: command.app)
 
         case .axClick(let role, let titleContains, let helpContains, let descriptionContains, let tabName):
-            // Switch to the owning tab first if one was captured when the recipe was
-            // authored (e.g. Format Painter lives on Home). If not specified, leave the
-            // current tab alone.
-            if let tabName, !tabName.isEmpty {
-                RibbonButtonClicker.activateTab(name: tabName, inApp: command.app)
-            }
+            // The full press flow (optional tab activation + AX press) runs in a
+            // detached background task. `BindingCoordinator` is `@MainActor`, so
+            // without this hop the main thread would block for ~400 ms on Format
+            // Painter (the activate-then-press sleep inside RibbonButtonClicker)
+            // — long enough to freeze the menu bar status icons (top-right of the
+            // screen) for every fire. Apple's Accessibility API is thread-safe;
+            // AX calls are routed to the target process and don't depend on the
+            // caller's thread. We return `true` immediately to signal "dispatch
+            // initiated" — matches the existing `.appleScript` recipe's
+            // fire-and-forget semantics. Errors land in NSLog from the task.
+            let commandId = command.id
+            let targetApp = command.app
             let target = RibbonButtonClicker.RibbonTarget(
                 role: role,
                 titleContains: titleContains,
                 helpContains: helpContains,
                 descriptionContains: descriptionContains
             )
-            do {
-                try RibbonButtonClicker.press(target: target, inApp: command.app)
-                return true
-            } catch {
-                NSLog("[Ribbind] axClick fire failed for %@: %@",
-                      command.id, String(describing: error))
-                return false
+            Task.detached(priority: .userInitiated) {
+                if let tabName, !tabName.isEmpty {
+                    await RibbonButtonClicker.activateTab(name: tabName, inApp: targetApp)
+                }
+                do {
+                    try RibbonButtonClicker.press(target: target, inApp: targetApp)
+                    NSLog("[Ribbind] dispatched %@ via axClick (async)", commandId)
+                } catch {
+                    NSLog("[Ribbind] axClick fire failed for %@: %@",
+                          commandId, String(describing: error))
+                }
             }
+            return true
 
         case .axShowMenuThenClick(let parentRole, let parentTitleContains, let cellRole, let cellDescription, let tabName):
-            if let tabName, !tabName.isEmpty {
-                RibbonButtonClicker.activateTab(name: tabName, inApp: command.app)
+            // Same off-main pattern as `.axClick` above. The cell-poll loop
+            // inside showMenuThenClick sleeps up to 600 ms scanning the
+            // freshly-opened menu's children, which would freeze the menu
+            // bar on the main thread.
+            let commandId = command.id
+            let targetApp = command.app
+            Task.detached(priority: .userInitiated) {
+                if let tabName, !tabName.isEmpty {
+                    await RibbonButtonClicker.activateTab(name: tabName, inApp: targetApp)
+                }
+                do {
+                    try await RibbonButtonClicker.showMenuThenClick(
+                        parentRole: parentRole,
+                        parentTitleContains: parentTitleContains,
+                        cellRole: cellRole,
+                        cellDescription: cellDescription,
+                        inApp: targetApp
+                    )
+                    NSLog("[Ribbind] dispatched %@ via axShowMenuThenClick (async)", commandId)
+                } catch {
+                    NSLog("[Ribbind] axShowMenuThenClick fire failed for %@: %@",
+                          commandId, String(describing: error))
+                }
             }
-            do {
-                try RibbonButtonClicker.showMenuThenClick(
-                    parentRole: parentRole,
-                    parentTitleContains: parentTitleContains,
-                    cellRole: cellRole,
-                    cellDescription: cellDescription,
-                    inApp: command.app
-                )
-                return true
-            } catch {
-                NSLog("[Ribbind] axShowMenuThenClick fire failed for %@: %@",
-                      command.id, String(describing: error))
-                return false
-            }
+            return true
 
         case .appleScript(let source):
             let interpolated = Self.interpolate(source: source, command: command, binding: binding)
@@ -386,59 +405,69 @@ public final class BindingCoordinator: ObservableObject {
             let resolved = (binding?.parameters ?? [:])
                 .merging(command.defaultParameters ?? [:]) { cur, _ in cur }
             let targetLang = resolved["targetLanguage"] ?? "ko"
-            do {
-                try RibbonButtonClicker.chromeTranslateToggle(targetLanguage: targetLang)
-                return true
-            } catch let f as RibbonButtonClicker.Failure {
-                // Translate-specific errors get a user notification so the
-                // user knows what to do (e.g., open Settings to download
-                // the model). Non-translate failures just log.
-                switch f {
-                case .chromeTranslateGestureRequired(let s, let t):
-                    RibbindNotifier.notify(
-                        title: "Translation model not ready",
-                        body: "Open Ribbind Settings → Google Chrome → Initialize translation model to download the \(s) → \(t) model (one-time, ~50 MB)."
-                    )
-                case .chromeTranslateSameLanguage:
-                    RibbindNotifier.notify(
-                        title: "Already in target language",
-                        body: "This page is already in your target language — nothing to translate."
-                    )
-                case .chromeTranslatePairUnavailable(let s, let t):
-                    RibbindNotifier.notify(
-                        title: "Translation pair not available",
-                        body: "Chrome can't translate \(s) → \(t) on this device. Try another target language in Ribbind Settings."
-                    )
-                case .chromeTranslateAPIMissing:
-                    RibbindNotifier.notify(
-                        title: "Chrome too old",
-                        body: "Chrome 138 or newer is required for built-in translation."
-                    )
-                case .chromeTranslateInternal(let m):
-                    RibbindNotifier.notify(
-                        title: "Translation failed",
-                        body: m
-                    )
-                case .chromeTranslateBusy:
-                    RibbindNotifier.notify(
-                        title: "Translation in progress",
-                        body: "A previous Translate Page run is still working on this tab. Wait a moment, then try again — pressing the shortcut while the page is mid-translation would corrupt the toggle state."
-                    )
-                case .chromeTranslateDetectorUnavailable:
-                    RibbindNotifier.notify(
-                        title: "Couldn't detect page language",
-                        body: "This page has no <html lang> attribute and Chrome's LanguageDetector API didn't return a result. Reload the page or pick a different tab."
-                    )
-                default:
+            let commandId = command.id
+            // Move the adaptive poll loop (up to 30 s of Thread.sleep on whoever
+            // calls this) off the main thread. Without this, every ⌃⌘T fire
+            // would freeze Ribbind's main thread — and therefore its menu-bar
+            // icon at the top-right of the screen — for the entire duration of
+            // the translation. The page-side state machine + JS-level BUSY
+            // guard keep concurrent fires safe; the only behaviour change is
+            // that `tryDispatch` returns immediately instead of after the JS
+            // completes (consistent with the existing `.appleScript` fire-and-
+            // forget path).
+            Task.detached(priority: .userInitiated) {
+                do {
+                    try RibbonButtonClicker.chromeTranslateToggle(targetLanguage: targetLang)
+                    NSLog("[Ribbind] dispatched %@ via chromeTranslateToggle (async)", commandId)
+                } catch let f as RibbonButtonClicker.Failure {
+                    await MainActor.run {
+                        switch f {
+                        case .chromeTranslateGestureRequired(let s, let t):
+                            RibbindNotifier.notify(
+                                title: "Translation model not ready",
+                                body: "Open Ribbind Settings → Google Chrome → Initialize translation model to download the \(s) → \(t) model (one-time, ~50 MB)."
+                            )
+                        case .chromeTranslateSameLanguage:
+                            RibbindNotifier.notify(
+                                title: "Already in target language",
+                                body: "This page is already in your target language — nothing to translate."
+                            )
+                        case .chromeTranslatePairUnavailable(let s, let t):
+                            RibbindNotifier.notify(
+                                title: "Translation pair not available",
+                                body: "Chrome can't translate \(s) → \(t) on this device. Try another target language in Ribbind Settings."
+                            )
+                        case .chromeTranslateAPIMissing:
+                            RibbindNotifier.notify(
+                                title: "Chrome too old",
+                                body: "Chrome 138 or newer is required for built-in translation."
+                            )
+                        case .chromeTranslateInternal(let m):
+                            RibbindNotifier.notify(
+                                title: "Translation failed",
+                                body: m
+                            )
+                        case .chromeTranslateBusy:
+                            RibbindNotifier.notify(
+                                title: "Translation in progress",
+                                body: "A previous Translate Page run is still working on this tab. Wait a moment, then try again — pressing the shortcut while the page is mid-translation would corrupt the toggle state."
+                            )
+                        case .chromeTranslateDetectorUnavailable:
+                            RibbindNotifier.notify(
+                                title: "Couldn't detect page language",
+                                body: "This page has no <html lang> attribute and Chrome's LanguageDetector API didn't return a result. Reload the page or pick a different tab."
+                            )
+                        default:
+                            NSLog("[Ribbind] chromeTranslateToggle failed for %@: %@",
+                                  commandId, String(describing: f))
+                        }
+                    }
+                } catch {
                     NSLog("[Ribbind] chromeTranslateToggle failed for %@: %@",
-                          command.id, String(describing: f))
+                          commandId, String(describing: error))
                 }
-                return false
-            } catch {
-                NSLog("[Ribbind] chromeTranslateToggle failed for %@: %@",
-                      command.id, String(describing: error))
-                return false
             }
+            return true
 
         case .pasteWithFormat:
             // Read pasteType from binding (or catalog default), route via PasteDispatcher.

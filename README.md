@@ -2,7 +2,7 @@
 
 🌐 **English** · [한국어](./README.ko.md)
 
-Bind any keyboard shortcut to any Microsoft Word, PowerPoint, or Google Chrome command on macOS — including Ribbon-only buttons that System Settings can't reach. Currently **v0.6.5**.
+Bind any keyboard shortcut to any Microsoft Word, PowerPoint, or Google Chrome command on macOS — including Ribbon-only buttons that System Settings can't reach. Currently **v0.6.6**.
 
 [![Support on Ko-fi](https://img.shields.io/badge/Support%20on-Ko--fi-ff5e5b?logo=ko-fi&logoColor=white&style=for-the-badge)](https://ko-fi.com/minguk2)
 
@@ -10,7 +10,7 @@ Bind any keyboard shortcut to any Microsoft Word, PowerPoint, or Google Chrome c
 
 ## Install
 
-**1. Download the installer** from the [latest release](https://github.com/minguk2/ribbind/releases/latest) — grab `Ribbind-v0.6.5.dmg`.
+**1. Download the installer** from the [latest release](https://github.com/minguk2/ribbind/releases/latest) — grab `Ribbind-v0.6.6.dmg`.
 
 **2. Double-click the DMG.** A window opens with `Ribbind.app` and a shortcut to **Applications**.
 
@@ -69,7 +69,7 @@ Same block works for first install and updates. Build is ~30 s. After updates, r
 
 ![PowerPoint settings tab](docs/screenshots/settings-powerpoint.png)
 
-- **Format** — Format Painter, Font Color 1/2/3 (RGB picker), Font Family
+- **Format** — Format Painter, Font Color 1/2/3 (RGB picker), Font Family, Paste with Format (text-only, per-binding type picker)
 - **Picture** — Crop, Lock Aspect Ratio
 - **Shapes** — Text Box, Oval, Rectangle, Rounded Rectangle, Down Arrow, Left Arrow
 - **Slide Show** — Hide Slide
@@ -80,7 +80,7 @@ The four menu-accessible shapes arm PowerPoint's drag-to-create cursor (just lik
 
 ![Word settings tab](docs/screenshots/settings-word.png)
 
-- **Format** — Format Painter, Highlight 1/2/3 (named color), Font Color 1/2/3 (RGB), Font Family
+- **Format** — Format Painter, Highlight 1/2/3 (named color), Font Color 1/2/3 (RGB), Font Family, Paste with Format (text-only, per-binding type picker)
 - **Picture** — Crop, Lock Aspect Ratio
 
 Highlights write Word's native `<w:highlight>`, so the Home ribbon's *No Color* button clears them normally.
@@ -126,6 +126,8 @@ The **General** tab shows live status: Accessibility check, Office detection, La
 ## FAQ
 
 **Shortcut does nothing?** Check (1) the target app is foreground, (2) Accessibility is granted to the *current* `/Applications/Ribbind.app` (each release rotates the signature — re-add Ribbind in System Settings → Accessibility), (3) PowerPoint menu shortcuts only register at launch — quit and reopen.
+
+**Paste with Format on an image clipboard?** The picker (Unformatted / Match Formatting / etc.) only applies to **text** clipboards. If your clipboard holds an image or a file, Ribbind falls back to a plain Paste so the image / file lands normally — no silent strip-to-empty.
 
 **macOS says "Ribbind cannot be opened because Apple cannot check it"?** That's Gatekeeper on the very first launch. Click **Done** on that dialog, then go to **System Settings → Privacy & Security**, scroll down to *"Ribbind" was blocked to protect your Mac*, and click **Open Anyway**. Authenticate, then confirm Open. macOS remembers your choice; double-click works normally after this. (On macOS Sequoia 15+ this is the only path — Apple removed the older right-click → Open shortcut from the Finder context menu.)
 

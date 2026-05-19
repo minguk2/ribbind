@@ -38,8 +38,25 @@ public enum PasteDispatcher {
     /// Apply the requested paste type in the target app. The caller is
     /// expected to have confirmed the target app is frontmost (the
     /// `HotkeyMonitor` gate already does this for hotkey dispatch).
+    ///
+    /// **Text-only gate**: if the clipboard does not contain readable plain
+    /// text (e.g. only image / file / RTF binary types), the paste-format
+    /// path is skipped and a plain `Paste` is invoked instead. Rationale:
+    /// "Unformatted Text" / "Match Formatting" / Word's `paste special data
+    /// type paste text` are all text transformations — applying them to an
+    /// image clipboard either fails (Word AS errors, PPT swap writes an
+    /// empty plain-text item that pastes nothing) or silently strips the
+    /// image. End-user expectation is that ⌘V on an image clipboard pastes
+    /// the image normally, regardless of the picker's text-paste setting.
     @MainActor
     public static func dispatch(pasteType: String, app: AppTarget) throws {
+        // Bypass paste-format transformations when clipboard isn't text.
+        // `default` already does a plain paste, so it's a no-op there.
+        if pasteType != "default" && !clipboardHasText() {
+            try pressMenu("Paste", inApp: app)
+            return
+        }
+
         switch (app, pasteType) {
         // ----- Word: direct AppleScript paste special -----
         case (.word, "unformatted"):
@@ -64,6 +81,30 @@ public enum PasteDispatcher {
         default:
             throw Failure.unsupported(pasteType: pasteType, app: app)
         }
+    }
+
+    /// True iff the system pasteboard currently holds at least one
+    /// non-empty plain-text item. Used as the gate that decides whether to
+    /// engage the paste-format transformations or fall back to a plain
+    /// `Paste`. Cheap to call (no AS, no AX) — single NSPasteboard read.
+    @MainActor
+    private static func clipboardHasText() -> Bool {
+        let pb = NSPasteboard.general
+        if let s = pb.string(forType: .string), !s.isEmpty {
+            return true
+        }
+        // Some apps put text on the pasteboard only under the RTF / HTML
+        // types (no .string mirror). Treat those as text too — Word's
+        // `paste rtf` and `paste html` paths consume them directly, and
+        // PPT's clipboard swap will fall through to its own .string
+        // extraction (which may be empty, but that's a separate concern).
+        for type in [NSPasteboard.PasteboardType.rtf,
+                     NSPasteboard.PasteboardType.html] {
+            if pb.data(forType: type) != nil {
+                return true
+            }
+        }
+        return false
     }
 
     // MARK: - Word
