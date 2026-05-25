@@ -4,7 +4,7 @@
 
 macOS의 Microsoft Word, PowerPoint, Google Chrome 명령에 키보드 단축키를 할당합니다. System Settings의 키보드 단축키 화면으로는 닿지 않는 Ribbon 전용 버튼도 포함합니다.
 
-현재 버전: **v0.6.6**
+현재 버전: **v0.6.7**
 
 [![Support on Ko-fi](https://img.shields.io/badge/Support%20on-Ko--fi-ff5e5b?logo=ko-fi&logoColor=white&style=for-the-badge)](https://ko-fi.com/minguk2)
 
@@ -12,7 +12,7 @@ macOS의 Microsoft Word, PowerPoint, Google Chrome 명령에 키보드 단축키
 
 ## 설치
 
-**1단계. 인스톨러 다운로드** — [최신 릴리즈](https://github.com/minguk2/ribbind/releases/latest) 페이지에서 `Ribbind-v0.6.6.dmg` 를 받습니다.
+**1단계. 인스톨러 다운로드** — [최신 릴리즈](https://github.com/minguk2/ribbind/releases/latest) 페이지에서 `Ribbind-v0.6.7.dmg` 를 받습니다.
 
 **2단계. DMG 더블클릭.** 창이 열리면 한쪽에 `Ribbind.app`, 다른 쪽에 **Applications** 폴더 단축키가 보입니다.
 
