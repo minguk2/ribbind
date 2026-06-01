@@ -673,11 +673,6 @@ struct ValidationHarness {
         // All powerpoint.Shape* commands get the same +1-shape-count scenario.
         // The list is kept in sync with the catalog via the catalog↔scenario
         // symmetry check (Tier 1 fails if they drift).
-        // ShapeLine removed 2026-04-25 PM — see CLAUDE.md "Removed catalog
-        // entries" section. Lines are connectors, not auto shapes; PPT AS
-        // dictionary requires different start/end-point geometry that doesn't
-        // fit the auto-shape mutation pattern Ribbind uses for the other 25
-        // shapes.
         // PPT shape catalog after the 2026-05-05 cull — only commonly-needed
         // shapes ship; exotic ones (heart, sun, lightning bolt, callouts,
         // flowchart elements, etc.) were removed at user's request to keep the
@@ -685,7 +680,7 @@ struct ValidationHarness {
         // PRIMARY (fixed-size); menu-accessible shapes use `nsUserKeyEquivalent`.
         let allPptShapes = [
             "powerpoint.ShapeArrowDown", "powerpoint.ShapeArrowLeft",
-            "powerpoint.ShapeOval", "powerpoint.ShapeRectangle",
+            "powerpoint.ShapeLine", "powerpoint.ShapeOval", "powerpoint.ShapeRectangle",
             "powerpoint.ShapeRoundedRectangle", "powerpoint.ShapeTextBox",
         ]
         // Menu-accessible shapes dispatch via `nsUserKeyEquivalent` (AX press of
@@ -694,6 +689,7 @@ struct ValidationHarness {
         // always fail; we mark these manualVerifyOnly.
         let menuDispatchShapeIds: Set<String> = [
             "powerpoint.ShapeTextBox",
+            "powerpoint.ShapeLine",
             "powerpoint.ShapeOval",
             "powerpoint.ShapeRectangle",
             "powerpoint.ShapeRoundedRectangle",
@@ -1870,6 +1866,7 @@ struct ValidationHarness {
             // on the slide canvas), so skip + leave for manual smoke.
             let menuDispatch: Set<String> = [
                 "powerpoint.ShapeTextBox",
+                "powerpoint.ShapeLine",
                 "powerpoint.ShapeOval",
                 "powerpoint.ShapeRectangle",
                 "powerpoint.ShapeRoundedRectangle",
@@ -3392,9 +3389,9 @@ struct ValidationHarness {
         }
         v.check("every PPT shape command has a valid PRIMARY recipe + appleScript fallback that creates the right shape") {
             // PPT shape dispatch (post 2026-04-28): the 5 shapes that PPT exposes
-            // via the Insert menu bar (Text Box, Oval, Rectangle, Rounded
-            // Rectangle, Triangle) use `nsUserKeyEquivalent` PRIMARY — AX-press
-            // the menu item so PPT enters drag-to-create mode. The 20 shapes
+            // via the Insert menu bar (Text Box, Line, Oval, Rectangle,
+            // Rounded Rectangle) use `nsUserKeyEquivalent` PRIMARY — AX-press
+            // the menu item so PPT enters drag-to-create mode. The shapes
             // that are Ribbon-only (heart, sun, lightning bolt, ...) keep
             // `appleScript` PRIMARY (fixed-size auto-shape, no drag).
             //
@@ -3409,12 +3406,14 @@ struct ValidationHarness {
             // with PowerPoint's Insert menu items (`ppt-enumerate-menu-items`).
             let menuAccessibleShapeIds: Set<String> = [
                 "powerpoint.ShapeTextBox",
+                "powerpoint.ShapeLine",
                 "powerpoint.ShapeOval",
                 "powerpoint.ShapeRectangle",
                 "powerpoint.ShapeRoundedRectangle",
             ]
             let menuTitleByCmdId: [String: String] = [
                 "powerpoint.ShapeTextBox":          "Text Box",
+                "powerpoint.ShapeLine":             "Line",
                 "powerpoint.ShapeOval":             "Oval",
                 "powerpoint.ShapeRectangle":        "Rectangle",
                 "powerpoint.ShapeRoundedRectangle": "Rounded Rectangle",
@@ -3447,10 +3446,6 @@ struct ValidationHarness {
                                  "\(id) source should mutate auto shape type via numeric value")
                 }
             }
-        }
-        v.check("powerpoint.ShapeLine NOT in catalog (removed 2026-04-25 — connector, not auto shape)") {
-            try v.expect(!catalog.commands.contains { $0.id == "powerpoint.ShapeLine" },
-                         "ShapeLine was removed because it requires connector-geometry AS that doesn't fit the auto-shape pattern; do not re-add without a separate appleScript recipe")
         }
         v.check("word.PasteWithFormat + powerpoint.PasteWithFormat are pasteWithFormat with valid pasteType default") {
             // Both apps ship a single Paste-with-Format entry; per-binding

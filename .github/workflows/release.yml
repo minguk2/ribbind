@@ -106,6 +106,8 @@ jobs:
             dist/Ribbind-${{ github.ref_name }}.zip
             dist/Ribbind-${{ github.ref_name }}.zip.sha256
           body: |
+            Ribbind creates macOS Word and PowerPoint keyboard shortcuts and Microsoft Office shortcuts for Mac, including Ribbon commands and a Chrome Translate shortcut. 한국어로는 맥 워드 단축키, 맥 파워포인트 단축키, 맥 오피스 단축키, 리본 메뉴 단축키를 찾는 사용자를 위한 앱입니다.
+
             ## Install (drag-and-drop)
 
             1. Download **Ribbind-${{ github.ref_name }}.dmg** below.

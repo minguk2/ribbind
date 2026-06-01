@@ -2,7 +2,9 @@
 
 🌐 [English](./README.md) · **한국어**
 
-macOS의 Microsoft Word, PowerPoint, Google Chrome 명령에 키보드 단축키를 할당합니다. System Settings의 키보드 단축키 화면으로는 닿지 않는 Ribbon 전용 버튼도 포함합니다.
+맥 워드 단축키와 맥 파워포인트 단축키를 원하는 키 조합으로 만들고, Google Chrome 번역 단축키까지 할당하는 macOS 앱입니다. System Settings의 키보드 단축키 화면으로는 닿지 않는 Ribbon 전용 버튼도 포함합니다.
+
+맥 오피스 단축키와 리본 메뉴 단축키가 필요한 경우, Microsoft Word, PowerPoint, Google Chrome 명령을 Ribbind에서 직접 바인딩할 수 있습니다.
 
 현재 버전: **v0.6.7**
 
@@ -73,10 +75,10 @@ open /Applications/Ribbind.app
 
 - **Format**: Format Painter, Font Color 1/2/3 (RGB picker), Font Family, Paste with Format (텍스트 전용, 바인딩별 타입 picker)
 - **Picture**: Crop, Lock Aspect Ratio
-- **Shapes**: Text Box, Oval, Rectangle, Rounded Rectangle, Down Arrow, Left Arrow
+- **Shapes**: Text Box, Line, Oval, Rectangle, Rounded Rectangle, Down Arrow, Left Arrow
 - **Slide Show**: Hide Slide
 
-메뉴에 등록된 4개 도형(Text Box, Oval, Rectangle, Rounded Rectangle)은 단축키를 누르면 PowerPoint의 드래그 그리기 커서가 활성화됩니다. 마우스로 Insert 메뉴에서 Shape를 직접 클릭한 것과 같은 동작입니다.
+메뉴에 등록된 도형(Text Box, Line, Oval, Rectangle, Rounded Rectangle)은 단축키를 누르면 PowerPoint의 드래그 그리기 커서가 활성화됩니다. 마우스로 Insert 메뉴에서 Shape를 직접 클릭한 것과 같은 동작입니다.
 
 ### Word
 

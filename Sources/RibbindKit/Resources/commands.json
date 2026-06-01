@@ -442,6 +442,33 @@
     "notes": "Primary: AX-press Insert > Shape > Rounded Rectangle menu bar item — drag cursor armed. Fallbacks: AS msoShapeRoundedRectangle=5; Ribbon click."
   },
   {
+    "id": "powerpoint.ShapeLine",
+    "app": "powerpoint",
+    "label": "Line",
+    "category": "Shapes",
+    "idMso": "ShapeLineStraight",
+    "dispatchRecipes": [
+      {
+        "type": "nsUserKeyEquivalent",
+        "menuTitle": "Line"
+      },
+      {
+        "type": "appleScript",
+        "source": "tell application \"Microsoft PowerPoint\"\n  tell (slide of view of document window 1)\n    make new shape at end with properties {connector type:straight, left position:200, top:150, width:220, height:0}\n  end tell\nend tell"
+      },
+      {
+        "type": "axShowMenuThenClick",
+        "parentRole": "AXMenuButton",
+        "parentTitleContains": "Shapes",
+        "cellRole": "AXRadioButton",
+        "cellDescription": "Line",
+        "tabName": "Insert"
+      }
+    ],
+    "notes": "Primary: AX-press Insert > Shape > Line menu bar item — drag cursor armed. Fallbacks: AS straight connector; Ribbon click.",
+    "defaultShortcut": "⌘⇧W"
+  },
+  {
     "id": "powerpoint.ShapeArrowLeft",
     "app": "powerpoint",
     "label": "Left Arrow (Block)",
@@ -461,8 +488,7 @@
         "tabName": "Insert"
       }
     ],
-    "notes": "Primary: appleScript msoShapeLeftArrow=34. Fallback: Ribbon click.",
-    "defaultShortcut": "⌘⇧W"
+    "notes": "Primary: appleScript msoShapeLeftArrow=34. Fallback: Ribbon click."
   },
   {
     "id": "powerpoint.ShapeArrowDown",

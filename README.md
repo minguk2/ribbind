@@ -2,7 +2,9 @@
 
 🌐 **English** · [한국어](./README.ko.md)
 
-Bind any keyboard shortcut to any Microsoft Word, PowerPoint, or Google Chrome command on macOS — including Ribbon-only buttons that System Settings can't reach. Currently **v0.6.7**.
+Bind any keyboard shortcut to any Microsoft Word, PowerPoint, or Google Chrome command on macOS — including Ribbon-only buttons that System Settings can't reach.
+
+Use it for macOS Word and PowerPoint keyboard shortcuts, Microsoft Office shortcuts for Mac, Ribbon menu shortcuts, and a Chrome Translate shortcut. Currently **v0.6.7**.
 
 [![Support on Ko-fi](https://img.shields.io/badge/Support%20on-Ko--fi-ff5e5b?logo=ko-fi&logoColor=white&style=for-the-badge)](https://ko-fi.com/minguk2)
 
@@ -71,10 +73,10 @@ Same block works for first install and updates. Build is ~30 s. After updates, r
 
 - **Format** — Format Painter, Font Color 1/2/3 (RGB picker), Font Family, Paste with Format (text-only, per-binding type picker)
 - **Picture** — Crop, Lock Aspect Ratio
-- **Shapes** — Text Box, Oval, Rectangle, Rounded Rectangle, Down Arrow, Left Arrow
+- **Shapes** — Text Box, Line, Oval, Rectangle, Rounded Rectangle, Down Arrow, Left Arrow
 - **Slide Show** — Hide Slide
 
-The four menu-accessible shapes arm PowerPoint's drag-to-create cursor (just like clicking Insert → Shape).
+The menu-accessible shapes arm PowerPoint's drag-to-create cursor (just like clicking Insert → Shape).
 
 ### Word
 
