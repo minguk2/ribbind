@@ -150,6 +150,65 @@ public final class BindingCoordinator: ObservableObject {
         }
     }
 
+    /// Remove old shipped defaults that conflict with important Office-native
+    /// shortcuts. This is one-shot so a user can deliberately rebind the combo later.
+    public func migrateLegacyDefaultShortcutConflicts() {
+        let migrations: [(commandId: String, oldShortcut: String, reason: String)] = [
+            (
+                commandId: "powerpoint.FontColor3",
+                oldShortcut: "⌘⇧F",
+                reason: "PowerPoint uses ⇧⌘F for Bring Forward"
+            )
+        ]
+
+        for migration in migrations {
+            let flag = "Ribbind.didMigrateLegacyDefaultShortcutConflict.\(migration.commandId).v1"
+            guard !UserDefaults.standard.bool(forKey: flag) else { continue }
+            defer { UserDefaults.standard.set(true, forKey: flag) }
+
+            guard let parsed = KeyCodeTranslator.parseDisplayString(migration.oldShortcut) else {
+                NSLog("[Ribbind] legacy-default migration skipped %@: could not parse %@",
+                      migration.commandId, migration.oldShortcut)
+                continue
+            }
+
+            let legacyShortcut = KeyboardShortcuts.Shortcut(
+                carbonKeyCode: Int(parsed.keyCode),
+                carbonModifiers: parsed.carbonModifiers
+            )
+            let name = KeyboardShortcuts.Name(migration.commandId)
+            guard KeyboardShortcuts.getShortcut(for: name) == legacyShortcut else { continue }
+
+            KeyboardShortcuts.setShortcut(nil, for: name)
+            if let binding = store.binding(for: migration.commandId),
+               binding.macKeyCode == UInt16(legacyShortcut.carbonKeyCode),
+               binding.modifierMask == UInt32(legacyShortcut.modifiers.rawValue) {
+                store.remove(commandId: migration.commandId)
+            }
+            NSLog("[Ribbind] removed legacy default %@=%@ (%@)",
+                  migration.commandId, migration.oldShortcut, migration.reason)
+        }
+    }
+
+    /// A cleared Recorder can leave `{"carbonKeyCode":0,"carbonModifiers":0}` in
+    /// defaults. That is not "unbound" to the event tap; it is plain `A`.
+    public func removeInvalidEmptyKeyboardShortcuts(catalog: [Command]) {
+        var removed: [String] = []
+        for command in catalog {
+            let name = KeyboardShortcuts.Name(command.id)
+            guard let shortcut = KeyboardShortcuts.getShortcut(for: name),
+                  shortcut.carbonModifiers == 0 else {
+                continue
+            }
+            KeyboardShortcuts.setShortcut(nil, for: name)
+            removed.append(command.id)
+        }
+        if !removed.isEmpty {
+            NSLog("[Ribbind] removed invalid empty shortcut entries: %@",
+                  removed.joined(separator: ", "))
+        }
+    }
+
     /// Rebuild the CGEventTap monitor's binding map from the current `KeyboardShortcuts`
     /// stored combos + the catalog. Idempotent. Combos that are bound on more than one
     /// command (one in Word, one in PowerPoint, for example) are kept as a list; the
@@ -159,6 +218,7 @@ public final class BindingCoordinator: ObservableObject {
         for cmd in catalog {
             let name = KeyboardShortcuts.Name(cmd.id)
             guard let shortcut = KeyboardShortcuts.getShortcut(for: name) else { continue }
+            guard shortcut.carbonModifiers != 0 else { continue }
             let combo = HotkeyMonitor.Combo(
                 keyCode: Int64(shortcut.carbonKeyCode),
                 command: shortcut.modifiers.contains(.command),

@@ -290,8 +290,7 @@
     "notes": "Primary: appleScript font color via PPT object model with picker RGB (0–255).",
     "defaultParameters": {
       "color": "FF0000"
-    },
-    "defaultShortcut": "⌘⇧F"
+    }
   },
   {
     "id": "powerpoint.FontFamily",

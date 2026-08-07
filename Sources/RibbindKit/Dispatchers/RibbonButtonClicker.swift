@@ -119,13 +119,14 @@ public enum RibbonButtonClicker {
         )
     }
 
-    /// Press the first element in the given running app that matches `target`.
+    /// Press the first element in the frontmost document window that matches `target`.
     public static func press(target: RibbonTarget, inApp app: AppTarget) throws {
         guard AXIsProcessTrusted() else {
             throw Failure.accessibilityNotAuthorized
         }
         let pid = try pidForRunningApp(app)
-        let root = AXUIElementCreateApplication(pid)
+        let appRoot = AXUIElementCreateApplication(pid)
+        let root = actionRoot(from: appRoot)
 
         // Defense-in-depth: reject targets that would match the first element in the
         // tree. `DispatchRecipe` already rejects these at decode time, but axClick
@@ -136,7 +137,7 @@ public enum RibbonButtonClicker {
             throw Failure.elementNotFound("axClick target has no non-empty matcher — refusing to press first matching role")
         }
 
-        guard let element = findDescendant(of: root, matching: { attributes in
+        guard let element = findDescendant(of: root.element, matching: { attributes in
             guard (attributes[kAXRoleAttribute as String] as? String) == target.role else { return false }
             if let needle = target.titleContains, !needle.isEmpty {
                 guard let t = attributes[kAXTitleAttribute as String] as? String, t.contains(needle) else { return false }
@@ -149,7 +150,7 @@ public enum RibbonButtonClicker {
             }
             return true
         }, maxDepth: 25) else {
-            throw Failure.elementNotFound("role=\(target.role) title~=\(target.titleContains ?? "*") help~=\(target.helpContains ?? "*")")
+            throw Failure.elementNotFound("role=\(target.role) title~=\(target.titleContains ?? "*") help~=\(target.helpContains ?? "*") in \(root.label)")
         }
 
         let result = AXUIElementPerformAction(element, kAXPressAction as CFString)
@@ -223,13 +224,15 @@ public enum RibbonButtonClicker {
     ) throws {
         guard AXIsProcessTrusted() else { throw Failure.accessibilityNotAuthorized }
         let pid = try pidForRunningApp(app)
-        let root = AXUIElementCreateApplication(pid)
+        let appRoot = AXUIElementCreateApplication(pid)
+        let root = actionRoot(from: appRoot)
 
         // 1. Locate parent menu button — use the cache to skip the ~200 ms
-        //    full AX walk on subsequent fires. Cache key is per-pid so a Word
-        //    relaunch automatically invalidates entries from the prior PID.
-        let parentKey = "\(pid)|\(parentRole)|\(parentTitleContains)"
-        let parent = cachedDescendant(of: root, cacheKey: parentKey,
+        //    full AX walk on subsequent fires. Cache key includes the active
+        //    window scope so multiple Word/PPT documents don't share stale
+        //    Ribbon elements.
+        let parentKey = "\(pid)|\(root.cacheScope)|\(parentRole)|\(parentTitleContains)"
+        let parent = cachedDescendant(of: root.element, cacheKey: parentKey,
             matching: { el in
                 let attrs = attributeSnapshot(el)
                 return (attrs[kAXRoleAttribute as String] as? String) == parentRole
@@ -244,7 +247,7 @@ public enum RibbonButtonClicker {
             }
         )
         guard let parent else {
-            throw Failure.elementNotFound("parent role=\(parentRole) title~=\(parentTitleContains) (Ribbon may be collapsed)")
+            throw Failure.elementNotFound("parent role=\(parentRole) title~=\(parentTitleContains) in \(root.label) (Ribbon may be collapsed)")
         }
 
         // 2. Open the dropdown.
@@ -263,7 +266,7 @@ public enum RibbonButtonClicker {
         //    — `contains` would hit the wrong cell depending on tree order).
         var cell: AXUIElement?
         for _ in 0..<20 {
-            cell = findDescendant(of: root, matching: { attrs in
+            cell = findDescendant(of: appRoot, matching: { attrs in
                 guard (attrs[kAXRoleAttribute as String] as? String) == cellRole else { return false }
                 guard let d = attrs[kAXDescriptionAttribute as String] as? String else { return false }
                 return d == cellDescription
@@ -636,13 +639,15 @@ public enum RibbonButtonClicker {
     public static func activateTab(name: String, inApp app: AppTarget) -> Bool {
         guard AXIsProcessTrusted() else { return false }
         guard let pid = try? pidForRunningApp(app) else { return false }
-        let root = AXUIElementCreateApplication(pid)
+        let appRoot = AXUIElementCreateApplication(pid)
+        let root = actionRoot(from: appRoot)
 
         // Use the cache: tab radios don't move once Ribbon is rendered, so
         // walking the AX tree on every hotkey fire is pure latency. Cache
-        // miss path runs the original two-pass scan.
-        let cacheKey = "\(pid)|TAB|\(name)"
-        let tab = cachedDescendant(of: root, cacheKey: cacheKey,
+        // miss path runs the original two-pass scan. The active window is part
+        // of the key because Office exposes one Ribbon per document window.
+        let cacheKey = "\(pid)|\(root.cacheScope)|TAB|\(name)"
+        let tab = cachedDescendant(of: root.element, cacheKey: cacheKey,
             matching: { el in
                 let attrs = attributeSnapshot(el)
                 guard let r = attrs[kAXRoleAttribute as String] as? String,
@@ -670,7 +675,7 @@ public enum RibbonButtonClicker {
         )
 
         guard let tab else {
-            NSLog("[Ribbind] activateTab: no tab named \"%@\" in %@ (Ribbon collapsed?)", name, app.processName)
+            NSLog("[Ribbind] activateTab: no tab named \"%@\" in %@ %@ (Ribbon collapsed?)", name, app.processName, root.label)
             return false
         }
 
@@ -755,6 +760,28 @@ public enum RibbonButtonClicker {
 
     // MARK: - Helpers
 
+    private struct ActionRoot {
+        let element: AXUIElement
+        let cacheScope: String
+        let label: String
+    }
+
+    /// Office exposes one Ribbon per document window. Search the focused/main
+    /// window first so AXPress doesn't hit a matching button in another open deck.
+    private static func actionRoot(from appRoot: AXUIElement) -> ActionRoot {
+        if let window = attributeElement(appRoot, kAXFocusedWindowAttribute as String)
+            ?? attributeElement(appRoot, kAXMainWindowAttribute as String) {
+            let attrs = attributeSnapshot(window)
+            let title = (attrs[kAXTitleAttribute as String] as? String) ?? ""
+            let position = axPointDescription(attrs[kAXPositionAttribute as String])
+            let size = axSizeDescription(attrs[kAXSizeAttribute as String])
+            let scope = "window|\(title)|\(position)|\(size)"
+            let label = title.isEmpty ? "focused window" : "focused window \"\(title)\""
+            return ActionRoot(element: window, cacheScope: scope, label: label)
+        }
+        return ActionRoot(element: appRoot, cacheScope: "app", label: "app root")
+    }
+
     public static func activate(_ app: AppTarget) throws {
         guard let running = NSWorkspace.shared.runningApplications.first(where: {
             $0.bundleIdentifier == bundleID(for: app)
@@ -771,6 +798,42 @@ public enum RibbonButtonClicker {
             throw Failure.appNotRunning(app.processName)
         }
         return running.processIdentifier
+    }
+
+    private static func attributeElement(_ element: AXUIElement, _ attribute: String) -> AXUIElement? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success,
+              let raw = value,
+              CFGetTypeID(raw) == AXUIElementGetTypeID() else {
+            return nil
+        }
+        return (raw as! AXUIElement)
+    }
+
+    private static func axPointDescription(_ value: Any?) -> String {
+        guard let value else { return "pos=?" }
+        let raw = value as CFTypeRef
+        guard CFGetTypeID(raw) == AXValueGetTypeID() else { return "pos=?" }
+        let axValue = raw as! AXValue
+        var point = CGPoint.zero
+        guard AXValueGetType(axValue) == .cgPoint,
+              AXValueGetValue(axValue, .cgPoint, &point) else {
+            return "pos=?"
+        }
+        return String(format: "pos=%.0f,%.0f", point.x, point.y)
+    }
+
+    private static func axSizeDescription(_ value: Any?) -> String {
+        guard let value else { return "size=?" }
+        let raw = value as CFTypeRef
+        guard CFGetTypeID(raw) == AXValueGetTypeID() else { return "size=?" }
+        let axValue = raw as! AXValue
+        var size = CGSize.zero
+        guard AXValueGetType(axValue) == .cgSize,
+              AXValueGetValue(axValue, .cgSize, &size) else {
+            return "size=?"
+        }
+        return String(format: "size=%.0f,%.0f", size.width, size.height)
     }
 
     private static func bundleID(for app: AppTarget) -> String {

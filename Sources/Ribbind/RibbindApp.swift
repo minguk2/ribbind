@@ -66,6 +66,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         // per install (`Ribbind.didSeedDefaults` UserDefaults flag), and skips any
         // slot the user already bound so existing user choices are never overwritten.
         coordinator.seedDefaultsIfNeeded(catalog: catalog.commands)
+        coordinator.migrateLegacyDefaultShortcutConflicts()
+        coordinator.removeInvalidEmptyKeyboardShortcuts(catalog: catalog.commands)
         coordinator.registerAllStoredHotkeys(catalog: catalog.commands)
         // CGEventTap priority-over-Office monitor. Accessibility permission required;
         // if not yet granted the tap fails silently and hotkeys are dead until the

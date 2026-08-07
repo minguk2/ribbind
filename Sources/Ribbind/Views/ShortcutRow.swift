@@ -73,7 +73,7 @@ struct ShortcutRow: View {
 
             if hasFontParam {
                 Picker("", selection: fontNameBinding) {
-                    ForEach(NSFontManager.shared.availableFontFamilies, id: \.self) { family in
+                    ForEach(Self.availableFontFamilies, id: \.self) { family in
                         Text(family).tag(family)
                     }
                 }
@@ -231,6 +231,8 @@ struct ShortcutRow: View {
     /// Two-way binding for the font-family parameter — same shape as `colorBinding`
     /// but for the `fontName` key. Defaults from `command.defaultParameters["fontName"]`,
     /// then the system fallback "Helvetica Neue".
+    private static let availableFontFamilies = OfficeFontCatalog.availableFontFamilies()
+
     private var fontNameBinding: Binding<String> {
         Binding(
             get: {
