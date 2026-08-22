@@ -87,7 +87,6 @@ struct AppShortcutsView: View {
                             }
                         }
                     }
-                    ChromeJSAutomationSetupRow()
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 4)
@@ -96,6 +95,13 @@ struct AppShortcutsView: View {
                     VStack(alignment: .leading, spacing: 24) {
                         ForEach(groupedFiltered, id: \.category) { entry in
                             categoryBlock(entry)
+                        }
+                        // Deck-wide font replacement is a one-shot action, not a
+                        // hotkey, so it lives at the bottom of the PowerPoint tab
+                        // rather than in the catalog. Same card pattern the Chrome
+                        // tab used for its setup row.
+                        if app == .powerpoint {
+                            PowerPointDeckFontRow()
                         }
                     }
                     .padding(.horizontal, 4)

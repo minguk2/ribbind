@@ -47,18 +47,6 @@ struct ShortcutRow: View {
                     .help("Colour this shortcut applies. Defaults from the catalog; editable per-binding and saved with your other settings.")
             }
 
-            if hasTargetLanguageParam {
-                Picker("", selection: targetLanguageBinding) {
-                    ForEach(ChromeJSAutomation.supportedTargetLanguages) { lang in
-                        Text(lang.displayName).tag(lang.code)
-                    }
-                }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .frame(width: 200)
-                .help("Target language for Translate Page. Chrome downloads the on-device model for this pair on first use (one-time, ~50 MB) — Settings → Google Chrome guides the download.")
-            }
-
             if hasPasteFormatParam {
                 Picker("", selection: pasteTypeBinding) {
                     ForEach(PasteTypeMenu.options(forApp: command.app)) { opt in
@@ -122,10 +110,6 @@ struct ShortcutRow: View {
                        ?? "").uppercased()
             return hex.isEmpty ? command.label : "\(command.label) (#\(hex))"
         }
-        if hasTargetLanguageParam {
-            let code = targetLanguageBinding.wrappedValue
-            return "\(command.label) (\(ChromeJSAutomation.displayName(forLanguageCode: code)))"
-        }
         return command.label
     }
 
@@ -165,32 +149,6 @@ struct ShortcutRow: View {
             },
             set: { newToken in
                 store.setParameter(commandId: command.id, key: "colorName", value: newToken)
-            }
-        )
-    }
-
-    /// True when this command takes a target-language parameter
-    /// (`{{param.targetLanguage}}` or recipe consults it). Currently used by
-    /// `chrome.Translate` to let the user pick the destination language for
-    /// the Chrome Translator API.
-    private var hasTargetLanguageParam: Bool {
-        command.dispatchRecipes.contains { recipe in
-            if case .chromeTranslateToggle = recipe { return true }
-            return false
-        }
-    }
-
-    /// Two-way binding for the targetLanguage parameter. Default from catalog
-    /// (`defaultParameters.targetLanguage`), then "ko".
-    private var targetLanguageBinding: Binding<String> {
-        Binding(
-            get: {
-                store.binding(for: command.id)?.parameters?["targetLanguage"]
-                    ?? command.defaultParameters?["targetLanguage"]
-                    ?? "ko"
-            },
-            set: { newCode in
-                store.setParameter(commandId: command.id, key: "targetLanguage", value: newCode)
             }
         )
     }

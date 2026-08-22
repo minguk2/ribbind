@@ -52,26 +52,26 @@ public enum DispatchRecipe: Hashable, Sendable {
     /// only). The dispatcher substitutes them at fire time before handing the script
     /// to AppleScriptRunner.
     case appleScript(source: String)
-    /// Chrome-specific Translate toggle. The URL bar's translate icon (visible
-    /// in Chrome 113+ when the page contains a translatable language) is NOT
-    /// exposed via standard AX, so the dispatcher pixel-clicks at a computed
-    /// offset from the focused window's top-right and then AX-presses the
-    /// inactive language tab in the popup that opens.
+    /// Runs **Chrome's own** full-page translate — identical to right-click ▸
+    /// *Translate to …* — by pressing Chrome's real UI over the Accessibility API.
+    /// No JavaScript, no DOM rewriting, no Chrome-side setup.
     ///
-    /// Behaviour:
-    /// 1. Compute icon coordinate from `AXFocusedWindow` position + size
-    /// 2. CGEvent left-click at that coordinate (cursor stays put via
-    ///    CGAssociateMouseAndMouseCursorPosition decouple)
-    /// 3. Poll AX for the popup's language-tab buttons (popup IS exposed
-    ///    via AX even though the icon isn't)
-    /// 4. AXPress the tab that is NOT currently active — that switches the
-    ///    page between original and translated state
+    /// Behaviour (see `ChromeTranslateDispatcher` and
+    /// `research/09-chrome-native-translate-ax.md`):
+    /// 1. AXPress the omnibox `AXButton` whose description is "Translate"
+    /// 2. Chrome's native translate bubble opens as a separate AXWindow holding
+    ///    one AXRadioButton per language
+    /// 3. AXPress the radio that is NOT currently selected — that is what switches
+    ///    the page between original and translated
     ///
-    /// Limitation: when Chrome hasn't detected a translatable language on
-    /// the current page (icon not visible), the click misses; the popup
-    /// poll times out and the dispatch fails with a clear error. Same when
-    /// the page's language matches the user's Chrome translation language.
-    case chromeTranslateToggle
+    /// The bubble's `AXValue` is the toggle state, so Ribbind keeps no state of its
+    /// own and a page the user translated by hand still toggles correctly.
+    ///
+    /// The target language is Chrome's own setting (Chrome ▸ Settings ▸ Languages),
+    /// which is why this case carries no parameters. Fails cleanly when Chrome
+    /// offers no Translate control for the page (internal pages, PDFs, or a page
+    /// already in the user's language).
+    case chromeNativeTranslate
     /// Word / PowerPoint paste with a specific format chosen via the
     /// per-binding `pasteType` parameter. The dispatcher (see
     /// `PasteDispatcher.dispatch`) reads `binding.parameters["pasteType"]`
@@ -106,7 +106,11 @@ extension DispatchRecipe: Codable {
         case axClick
         case axShowMenuThenClick
         case appleScript
-        case chromeTranslateToggle
+        case chromeNativeTranslate
+        /// Legacy spelling from the JS-injection era. Decode-only, so a
+        /// user-commands.json written by an older build still loads; encoding
+        /// always emits `chromeNativeTranslate`.
+        case chromeTranslateToggleLegacy = "chromeTranslateToggle"
         case pasteWithFormat
     }
 
@@ -151,8 +155,8 @@ extension DispatchRecipe: Codable {
             )
         case .appleScript:
             self = .appleScript(source: try c.decode(String.self, forKey: .source))
-        case .chromeTranslateToggle:
-            self = .chromeTranslateToggle
+        case .chromeNativeTranslate, .chromeTranslateToggleLegacy:
+            self = .chromeNativeTranslate
         case .pasteWithFormat:
             self = .pasteWithFormat
         }
@@ -191,8 +195,8 @@ extension DispatchRecipe: Codable {
         case .appleScript(let source):
             try c.encode(RecipeType.appleScript, forKey: .type)
             try c.encode(source, forKey: .source)
-        case .chromeTranslateToggle:
-            try c.encode(RecipeType.chromeTranslateToggle, forKey: .type)
+        case .chromeNativeTranslate:
+            try c.encode(RecipeType.chromeNativeTranslate, forKey: .type)
         case .pasteWithFormat:
             try c.encode(RecipeType.pasteWithFormat, forKey: .type)
         }

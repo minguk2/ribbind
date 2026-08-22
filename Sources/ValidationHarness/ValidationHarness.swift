@@ -64,6 +64,14 @@ enum Subcommand: String, CaseIterable {
     case wordEnumerateMenuItems     = "word-enumerate-menu-items"
     case pptEnumerateMenuItems      = "ppt-enumerate-menu-items"
     case chromeEnumerateMenuItems   = "chrome-enumerate-menu-items"
+    case chromeAxProbe              = "chrome-ax-probe"        // dump Chrome's translate UI
+    case chromeTranslateNow         = "chrome-translate-now"   // fire the real dispatcher
+    case pptListPresentations       = "ppt-list-presentations"
+    case pptApplicableFonts         = "ppt-applicable-fonts"
+    case pptUsedFonts               = "ppt-used-fonts"
+    case pptReplaceFonts            = "ppt-replace-fonts"      // <font> — drives PowerPoint's dialog
+    case pptApplyFontSilent         = "ppt-apply-font-silent"  // <font> — the no-window path the panel uses
+    case pptxRewriteFile            = "pptx-rewrite-file"      // <path> <font> — offline file rewrite
     case postKey                    = "post-key"
     case fireById                   = "fire-by-id"
     case e2e                        = "e2e"
@@ -111,6 +119,31 @@ func cmdCtrlZBinding(commandId: String) -> ShortcutBinding {
 // MARK: - CLI error handling
 
 @MainActor
+/// Run a throwing block on a background queue and wait for it.
+///
+/// `runCLI` executes on the main thread, but `PowerPointFontReplacer.run` asserts
+/// it is NOT on the main queue — the shipping caller is a background queue, because
+/// a multi-second AX drive on the main actor would freeze Ribbind's menu-bar icon.
+/// The harness has to honour the same contract or it would be testing a path the
+/// app never takes.
+private final class OffMainBox<U>: @unchecked Sendable {
+    nonisolated init() {}
+    nonisolated(unsafe) var value: U?
+    nonisolated(unsafe) var error: Error?
+}
+
+nonisolated func offMain<T>(_ block: @escaping @Sendable () throws -> T) throws -> T {
+    let semaphore = DispatchSemaphore(value: 0)
+    let box = OffMainBox<T>()
+    DispatchQueue.global(qos: .userInitiated).async {
+        do { box.value = try block() } catch { box.error = error }
+        semaphore.signal()
+    }
+    semaphore.wait()
+    if let error = box.error { throw error }
+    return box.value!
+}
+
 func runCLI(_ block: () throws -> Void) -> Never {
     do {
         try block()
@@ -253,6 +286,111 @@ struct ValidationHarness {
 
         case .chromeEnumerateMenuItems:
             runCLI { try enumerateMenuItemsCLI(.chrome) }
+
+        case .chromeAxProbe:
+            runCLI { try chromeAxProbeCLI() }
+
+        case .pptListPresentations:
+            runCLI {
+                for p in try PowerPointFontReplacer.listOpenPresentations() {
+                    print("[\(p.index)] \(p.name)\(p.isSaved ? "" : "  (unsaved)")")
+                    if let folder = p.folder { print("     \(folder)") }
+                }
+            }
+
+        case .pptApplicableFonts:
+            runCLI {
+                let fonts = try PowerPointFontReplacer.applicableFonts()
+                print("PowerPoint offers \(fonts.count) entries:")
+                for f in fonts.prefix(15) { print("  \(f)") }
+                if fonts.count > 15 { print("  … \(fonts.count - 15) more") }
+            }
+
+        case .pptUsedFonts:
+            runCLI {
+                let fonts = try PowerPointFontReplacer.usedFonts()
+                print("this deck uses \(fonts.count): \(fonts.joined(separator: ", "))")
+                if let n = PowerPointFontReplacer.usedFontCount() { print("count of fonts = \(n)") }
+            }
+
+        case .pptxRewriteFile:
+            runCLI {
+                let args = Array(CommandLine.arguments.dropFirst(2))
+                guard args.count >= 2 else {
+                    throw Validator.ValidationError("usage: pptx-rewrite-file <path.pptx> <Font Name>")
+                }
+                let summary = try PptxFontRewriter.rewriteFile(at: args[0], to: args[1], makeBackup: false)
+                print("parts changed: \(summary.changedParts.count)")
+                for part in summary.changedParts { print("   \(part)") }
+                print("attributes rewritten: \(summary.rewrittenAttributes)")
+                print("fonts displaced: \(summary.replacedFonts.joined(separator: ", "))")
+            }
+
+        case .pptApplyFontSilent:
+            runCLI {
+                let args = Array(CommandLine.arguments.dropFirst(2))
+                guard let target = args.first(where: { !$0.hasPrefix("--") }) else {
+                    throw Validator.ValidationError("usage: ppt-apply-font-silent \"<Font Name>\" [--no-theme]")
+                }
+                let presentations = try PowerPointFontReplacer.listOpenPresentations()
+                guard let active = presentations.first(where: {
+                    $0.name == PowerPointFontReplacer.activePresentationName()
+                }) ?? presentations.first else {
+                    throw Validator.ValidationError("no presentation open")
+                }
+                let useTheme = !args.contains("--no-theme")
+                let report = try offMain {
+                    try PowerPointFontReplacer.applySilently(
+                        target: target, presentation: active, setThemeFonts: useTheme,
+                        progress: { p in print("   \(p.message)") })
+                }
+                print("applied: \(report.replaced.joined(separator: ", "))")
+                if !report.failed.isEmpty { print("skipped: \(report.failed.joined(separator: "; "))") }
+                print("theme slots: \(report.themeSlots.joined(separator: ", "))")
+                print("used fonts \(report.usedFontsBefore.map(String.init) ?? "?") -> \(report.usedFontsAfter.map(String.init) ?? "?")")
+                print(String(format: "duration %.1fs", report.duration))
+            }
+
+        case .pptReplaceFonts:
+            // usage: ppt-replace-fonts "<Font Name>" [--no-theme]
+            runCLI {
+                let args = Array(CommandLine.arguments.dropFirst(2))
+                guard let target = args.first(where: { !$0.hasPrefix("--") }) else {
+                    throw Validator.ValidationError("usage: ppt-replace-fonts \"<Font Name>\" [--no-theme]")
+                }
+                let presentations = try PowerPointFontReplacer.listOpenPresentations()
+                guard let active = presentations.first(where: {
+                    $0.name == PowerPointFontReplacer.activePresentationName()
+                }) ?? presentations.first else {
+                    throw Validator.ValidationError("no presentation open")
+                }
+                print("target font: \(target)")
+                print("presentation: \(active.name)")
+                let useTheme = !args.contains("--no-theme")
+                let report = try offMain {
+                    try PowerPointFontReplacer.run(
+                        target: target,
+                        presentation: active,
+                        setThemeFonts: useTheme,
+                        cancel: PowerPointFontReplacer.CancellationToken(),
+                        progress: { p in print("   [\(p.completed)/\(p.total)] \(p.message)") }
+                    )
+                }
+                print("replaced: \(report.replaced.joined(separator: ", "))")
+                if !report.failed.isEmpty { print("FAILED: \(report.failed.joined(separator: ", "))") }
+                print("theme slots set: \(report.themeSlots.joined(separator: ", "))")
+                if !report.themeFailures.isEmpty { print("theme failures: \(report.themeFailures.joined(separator: ", "))") }
+                print("used fonts \(report.usedFontsBefore.map(String.init) ?? "?") -> \(report.usedFontsAfter.map(String.init) ?? "?")")
+                print(String(format: "duration %.1fs  complete=%@", report.duration, report.isComplete ? "YES" : "NO"))
+            }
+
+        case .chromeTranslateNow:
+            // Exercises the SHIPPING dispatcher, not a copy of it. Chrome must be
+            // frontmost on a translatable page.
+            runCLI {
+                let outcome = try ChromeTranslateDispatcher.toggle()
+                print("translated: \(outcome.from) -> \(outcome.to)")
+            }
 
         case .fireById:
             // usage: fire-by-id <command-id> [param=value ...]
@@ -821,14 +959,20 @@ struct ValidationHarness {
         // Setup writes a 1×1 PNG to /tmp via `do shell script` (base64), then
         // inserts + selects it via the Office app's AS. Teardown closes the doc
         // and removes the temp PNG.
-        let testPngPath = "/tmp/ribbind-e2e-test-pixel.png"
+        // NOT /tmp: Word is sandboxed and answers a /tmp path with a modal
+        // "Grant File Access" dialog, which blocks the Apple Event until a
+        // human clicks it (verified live — the insert silently produced zero
+        // inline shapes). Office's own group container is readable by Word and
+        // PowerPoint with no prompt, and writable by us with no TCC prompt
+        // either (unlike ~/Documents).
+        let testPngPath = NSHomeDirectory() + "/Library/Group Containers/UBF8T346G9.Office/ribbind-e2e-test-pixel.png"
         // 1x1 red PNG: 67 bytes base64. Generated via `printf '\xff\x00\x00\xff' | sips -s format png ...`.
         let writeTestPngShell = """
-        do shell script "printf 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==' | base64 -D > \(testPngPath)"
+        do shell script "printf 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==' | base64 -D > " & quoted form of "\(testPngPath)"
         """
         let removeTestPngShell = """
         try
-            do shell script "rm -f \(testPngPath)"
+            do shell script "rm -f " & quoted form of "\(testPngPath)"
         end try
         """
         let wordImageSelectSetup = """
@@ -890,16 +1034,45 @@ struct ValidationHarness {
         // an AS verb to "open the Format Picture pane". Mark these as MANUAL
         // VERIFY ONLY so the e2e gate doesn't false-fail. See the catalog
         // notes for the user-side prerequisites.
-        for id in ["word.Crop", "word.LockAspectRatio"] {
-            out.append(E2EScenario(
-                commandId: id, app: .word, binding: nil,
-                setup: wordImageSelectSetup, teardown: wordImageTeardown,
-                expectedChanges: [],
-                positiveAssert: { _, _ in nil },
-                skipScratchInTier2c: true,
-                manualVerifyOnly: true
-            ))
-        }
+        // word.Crop still needs the contextual Picture Format tab, which Word
+        // doesn't auto-activate in this flow — keep it manual.
+        out.append(E2EScenario(
+            commandId: "word.Crop", app: .word, binding: nil,
+            setup: wordImageSelectSetup, teardown: wordImageTeardown,
+            expectedChanges: [],
+            positiveAssert: { _, _ in nil },
+            skipScratchInTier2c: true,
+            manualVerifyOnly: true
+        ))
+        // word.LockAspectRatio IS auto-testable now: the PRIMARY recipe writes
+        // `lock aspect ratio` on `inline shape 1 of selection`, so the Format
+        // Picture pane is no longer needed. `select inline picture 1` does work
+        // in Word (unlike PowerPoint, which has no `select` verb at all).
+        //
+        // Only inline pictures are covered on purpose — for a FLOATING shape
+        // Word rejects `count of shapes of selection` (-1708) and
+        // `lock aspect ratio of shape 1 of selection` (-1700), so the recipe
+        // errors and the axClick fallback handles it. Verified live.
+        out.append(E2EScenario(
+            commandId: "word.LockAspectRatio", app: .word, binding: nil,
+            setup: wordImageSelectSetup, teardown: wordImageTeardown,
+            expectedChanges: [],
+            positiveAssert: { _, _ in
+                let read = """
+                tell application "Microsoft Word"
+                    return (lock aspect ratio of inline shape 1 of selection) as string
+                end tell
+                """
+                guard let now = (try? AppleScriptRunner.run(read)) ?? nil else {
+                    return "couldn't read lock aspect ratio back (is the picture still selected?)"
+                }
+                guard now.trimmingCharacters(in: .whitespacesAndNewlines) == "true" else {
+                    return "lock aspect ratio did not turn on (read back \(now))"
+                }
+                return nil
+            },
+            skipScratchInTier2c: true
+        ))
         // PowerPoint.Crop is auto-testable — Crop appears in the Quick Access
         // Toolbar when an image is the active selection (no contextual tab
         // activation needed). Empirical: passes the harness reliably.
@@ -910,27 +1083,111 @@ struct ValidationHarness {
             positiveAssert: { _, _ in nil },
             skipScratchInTier2c: true
         ))
+        // PowerPoint.LockAspectRatio is now auto-testable. The PRIMARY recipe
+        // writes `lock aspect ratio` on `shape range of selection`, a property
+        // of the range itself, so the Format Picture pane no longer has to be
+        // open — that pane requirement was the only reason this was
+        // manualVerifyOnly.
+        //
+        // Selection has to be established by KEYBOARD, not AppleScript:
+        // PowerPoint 16.112.1 has no `select` verb at all (`select <shape>`
+        // returns -1708 "doesn't understand the select message"), so the old
+        // `select pic` line in pptImageSelectSetup was a silent no-op. Tab on
+        // the slide canvas selects the first shape, which is what a user does.
+        //
+        // Note `count of shape range` reports 0 even with a live selection —
+        // the working accessor is `count of shapes of shape range`, which is
+        // what the recipe's guard uses.
+        let pptShapeSelectSetup = """
+        tell application "Microsoft PowerPoint"
+            make new presentation
+            delay 1.2
+            tell active presentation
+                if (count of slides) is 0 then make new slide at end
+            end tell
+            delay 0.5
+            make new shape at slide 1 of active presentation with properties {shape type:rectangle, left position:120, top:120, width:220, height:130}
+            delay 0.5
+            activate
+        end tell
+        delay 1.0
+        tell application "System Events"
+            key code 53
+            delay 0.3
+            key code 48
+            delay 0.7
+        end tell
+        """
         out.append(E2EScenario(
             commandId: "powerpoint.LockAspectRatio", app: .powerpoint, binding: nil,
-            setup: pptImageSelectSetup, teardown: pptImageTeardown,
+            setup: pptShapeSelectSetup, teardown: pptTeardown,
             expectedChanges: [],
-            positiveAssert: { _, _ in nil },
-            skipScratchInTier2c: true,
-            manualVerifyOnly: true
+            positiveAssert: { _, _ in
+                // The snapshot doesn't carry lock-aspect-ratio, so assert
+                // directly against PowerPoint: the property must have flipped.
+                let read = """
+                tell application "Microsoft PowerPoint"
+                    return (lock aspect ratio of shape range of selection of document window 1) as string
+                end tell
+                """
+                guard let now = (try? AppleScriptRunner.run(read)) ?? nil else {
+                    return "couldn't read lock aspect ratio back (is a shape still selected?)"
+                }
+                guard now.trimmingCharacters(in: .whitespacesAndNewlines) == "true" else {
+                    return "lock aspect ratio did not turn on (read back \(now))"
+                }
+                return nil
+            },
+            skipScratchInTier2c: true
         ))
-        // PowerPoint.HideSlide dispatches via menu bar AX press (Slide Show >
-        // Hide Slide). Toggles the selected slide's `hidden` property. Verified
-        // manually — the snapshot reader doesn't carry a slide-hidden field
-        // and adding one for a single command isn't worth the AS round-trip
-        // tax. Catalog Tier 1 already pins the menuTitle; this scenario only
-        // satisfies the symmetry check.
+        // PowerPoint.HideSlide — TWO scenarios, one per toggle direction.
+        //
+        // The PRIMARY recipe reads `hidden of slide show transition` of the
+        // slide in view and writes its inverse, so it no longer depends on the
+        // menu item's title. That matters: PowerPoint RENAMES the menu item to
+        // "Unhide Slide" once the slide is hidden, and `pressMenuItem` matches
+        // AXTitle by exact equality — which is exactly why the old
+        // nsUserKeyEquivalent-only entry could hide a slide but never unhide
+        // one (verified live against PowerPoint 16.112.1).
+        //
+        // `pptActiveSlideHidden` (added to OfficeStateSnapshot for this) reads
+        // the VIEW slide, not slide 1, because that is what the command acts on.
         out.append(E2EScenario(
             commandId: "powerpoint.HideSlide", app: .powerpoint, binding: nil,
             setup: pptSetup, teardown: pptTeardown,
-            expectedChanges: [],
-            positiveAssert: { _, _ in nil },
-            skipScratchInTier2c: true,
-            manualVerifyOnly: true
+            expectedChanges: ["pptActiveSlideHidden"],
+            positiveAssert: { before, after in
+                guard let b = before.pptActiveSlideHidden else { return "no pptActiveSlideHidden before fire" }
+                guard let a = after.pptActiveSlideHidden else { return "no pptActiveSlideHidden after fire" }
+                guard b == false else { return "expected the scratch slide to start visible, got hidden=\(b)" }
+                guard a == true else { return "hide direction failed: slide still visible after fire" }
+                return nil
+            },
+            skipScratchInTier2c: true
+        ))
+        // The un-hide direction — the actual user-reported bug. Setup pre-hides
+        // the slide the way a deck author would, BEFORE Ribbind ever fires, so
+        // this fails against the old menu-title-matching implementation.
+        let pptPreHiddenSetup = pptSetup + """
+
+        tell application "Microsoft PowerPoint"
+            try
+                set hidden of slide show transition of slide (slide index of slide of view of document window 1) of active presentation to true
+            end try
+        end tell
+        """
+        out.append(E2EScenario(
+            commandId: "powerpoint.HideSlide", app: .powerpoint, binding: nil,
+            setup: pptPreHiddenSetup, teardown: pptTeardown,
+            expectedChanges: ["pptActiveSlideHidden"],
+            positiveAssert: { before, after in
+                guard let b = before.pptActiveSlideHidden else { return "no pptActiveSlideHidden before fire" }
+                guard let a = after.pptActiveSlideHidden else { return "no pptActiveSlideHidden after fire" }
+                guard b == true else { return "setup failed to pre-hide the slide (got hidden=\(b))" }
+                guard a == false else { return "UNHIDE FAILED — a slide hidden before Ribbind ran stayed hidden" }
+                return nil
+            },
+            skipScratchInTier2c: true
         ))
 
         // word.PasteWithFormat and powerpoint.PasteWithFormat dispatch via
@@ -2983,6 +3240,48 @@ struct ValidationHarness {
     /// via NSUserKeyEquivalents (i.e. via menu-bar AX dispatch — no Ribbon
     /// expansion needed). Output format: "Menu > Sub Menu > Item"
     @MainActor
+    /// Dump the Chrome UI that the native-translate dispatcher depends on:
+    /// the omnibox Translate button and, if the bubble is open, its language
+    /// radios with their live selected-state.
+    ///
+    /// Uses the same cycle-safe bounded search as the dispatcher — a naive walk
+    /// of Chrome's tree can hit an AXApplication self-reference and take 20+ s
+    /// (see research/09-chrome-native-translate-ax.md).
+    static func chromeAxProbeCLI() throws {
+        guard AXIsProcessTrusted() else {
+            throw Validator.ValidationError("Accessibility not granted to this process")
+        }
+        guard let running = NSWorkspace.shared.runningApplications
+            .first(where: { $0.bundleIdentifier == "com.google.Chrome" }) else {
+            throw Validator.ValidationError("Google Chrome isn't running")
+        }
+        let app = AXProbe.app(pid: running.processIdentifier)
+        AXProbe.setMessagingTimeout(app, seconds: 3.0)
+        let windows = AXProbe.allWindows(of: app)
+        print("windows: \(windows.count)")
+        for w in windows {
+            print("  subrole=\(AXProbe.subrole(w)) title=\"\(AXProbe.title(w))\"")
+        }
+        let started = Date()
+        var buttons: [AXUIElement] = []
+        for w in windows where AXProbe.subrole(w) == "AXStandardWindow" {
+            buttons += AXProbe.find(in: w, maxDepth: 12) { el, role in
+                role == "AXButton" && AXProbe.desc(el) == "Translate"
+            }
+        }
+        print("omnibox Translate button: \(buttons.isEmpty ? "ABSENT (page not translatable)" : "present") "
+              + "(\(Int(Date().timeIntervalSince(started) * 1000))ms)")
+        for w in windows where AXProbe.subrole(w) != "AXStandardWindow" {
+            let radios = AXProbe.find(in: w, maxDepth: 14, firstOnly: false) { _, role in role == "AXRadioButton" }
+            if radios.isEmpty { continue }
+            print("translate bubble \"\(AXProbe.title(w))\":")
+            for r in radios where !AXProbe.title(r).isEmpty {
+                let mark = AXProbe.value(r) == "1" ? " <- currently shown" : ""
+                print("   radio \"\(AXProbe.title(r))\" value=\(AXProbe.value(r))\(mark)")
+            }
+        }
+    }
+
     static func enumerateMenuItemsCLI(_ app: AppTarget) throws {
         try RibbonButtonClicker.activate(app)
         Thread.sleep(forTimeInterval: 0.6)
@@ -3468,20 +3767,125 @@ struct ValidationHarness {
                              "\(id) defaultParameters.pasteType '\(defaultType)' not in valid set \(validCodes)")
             }
         }
-        v.check("chrome.Translate is chromeTranslateToggle (Translator API JS injection)") {
+        v.check("chrome.Translate uses Chrome's own translate (chromeNativeTranslate, no parameters)") {
             guard let cmd = catalog.commands.first(where: { $0.id == "chrome.Translate" }) else {
                 throw Validator.ValidationError("chrome.Translate missing from catalog")
             }
             try v.expectEqual(cmd.app, .chrome, "chrome.Translate must target .chrome")
-            guard case .chromeTranslateToggle = cmd.dispatchRecipes.first! else {
-                throw Validator.ValidationError("chrome.Translate primary recipe must be chromeTranslateToggle")
+            guard case .chromeNativeTranslate = cmd.dispatchRecipes.first! else {
+                throw Validator.ValidationError("chrome.Translate primary recipe must be chromeNativeTranslate")
             }
-            // The recipe carries no parameters, but the catalog must specify a
-            // default target language so the dispatcher knows what to translate to.
-            try v.expect(cmd.defaultParameters?["targetLanguage"] != nil,
-                         "chrome.Translate must declare defaultParameters.targetLanguage")
+            // Inverted on purpose. The language now comes from Chrome's own
+            // settings, so a targetLanguage parameter would be a lie — and this
+            // is the ratchet that stops the old picker creeping back in.
+            try v.expect(cmd.defaultParameters?["targetLanguage"] == nil,
+                         "chrome.Translate must NOT declare a targetLanguage — the language is Chrome's own setting")
         }
-        v.check("Ribbind source contains no references to the unofficial translate.googleapis.com endpoint") {
+        v.check("AppleScriptRunner.literal escapes quotes and backslashes, rejects control characters") {
+            // Font family names and file paths are interpolated into AppleScript
+            // string literals. A name containing a quote would otherwise close the
+            // literal early and the remainder would parse as code.
+            for value in ["Helvetica", "Gill Sans MT", "한글 글꼴", #"Weird "Quoted" Name"#, #"back\\slash"#] {
+                let literal = try AppleScriptRunner.literal(value)
+                // Must compile as part of a real script.
+                try AppleScriptRunner.compile("set theFontName to \(literal)")
+            }
+            for bad in ["line\nbreak", "tab\ttab"] {
+                var threw = false
+                do { _ = try AppleScriptRunner.literal(bad) } catch { threw = true }
+                try v.expect(threw, "literal() must reject control characters in \(bad.debugDescription)")
+            }
+        }
+        v.check("Deck-font AppleScript compiles (reserved-word + terminology gate)") {
+            // PowerPoint's dictionary silently swallows several short identifiers:
+            // `out`, `st`, `x` and `th` are all reserved and fail to compile. This
+            // catches that class of bug without Office having to be running.
+            let theme = PowerPointFontReplacer.themeFontScriptForValidation(target: "Helvetica Neue")
+            try AppleScriptRunner.compile(theme)
+            let list = PowerPointFontReplacer.listPresentationsScriptForValidation()
+            try AppleScriptRunner.compile(list)
+            for banned in ["set out to", "set st to", "set x to", "set th to"] {
+                try v.expect(!theme.contains(banned) && !list.contains(banned),
+                             "generated AppleScript uses the reserved identifier in '\(banned)'")
+            }
+        }
+        v.check("parseKV splits on the first '=' only (deck and font names may contain one)") {
+            let parsed = PowerPointFontReplacer.parseKV("name1=Q1=2026 review.pptx\ncount=1\n")
+            try v.expectEqual(parsed["name1"], "Q1=2026 review.pptx", "value truncated at an interior '='")
+            try v.expectEqual(parsed["count"], "1", "count mis-parsed")
+        }
+        v.check("listOpenPresentations parsing survives zero open presentations (crash regression)") {
+            // Regression: `1...count` with count == 0 traps with "Range requires
+            // lowerBound <= upperBound". The Settings panel polls this every few
+            // seconds, so an empty PowerPoint crashed Ribbind on a timer.
+            try v.expect(PowerPointFontReplacer.presentations(from: ["count": "0"]).isEmpty,
+                         "zero presentations must parse to an empty list, not trap")
+            try v.expect(PowerPointFontReplacer.presentations(from: [:]).isEmpty,
+                         "missing count must parse to an empty list, not trap")
+            let two = PowerPointFontReplacer.presentations(from: [
+                "count": "2", "name1": "A.pptx", "path1": "/tmp/A.pptx", "name2": "B.pptx"
+            ])
+            try v.expectEqual(two.count, 2, "two presentations should parse")
+            try v.expect(two[0].isSaved && !two[1].isSaved, "saved/unsaved must follow the path field")
+        }
+        v.check("PptxFontRewriter rewrites fonts inside grouped shapes, tables and theme") {
+            // This is the whole justification for the file-rewrite path: PowerPoint's
+            // scripting cannot reach a group's children, but in the XML a <p:grpSp>
+            // child carries its own <a:latin typeface="…">, so it IS reachable here.
+            let xml = """
+            <p:sld><p:cSld><p:spTree>
+              <p:sp><p:txBody><a:p><a:r><a:rPr><a:latin typeface="Arial" pitchFamily="34"/></a:rPr></a:r></a:p></p:txBody></p:sp>
+              <p:grpSp>
+                <p:sp><p:txBody><a:p><a:r><a:rPr><a:latin typeface="Courier New"/><a:ea typeface="Batang"/></a:rPr></a:r></a:p></p:txBody></p:sp>
+              </p:grpSp>
+              <a:tbl><a:tr><a:tc><a:txBody><a:p><a:r><a:rPr><a:latin typeface="Georgia"/></a:rPr></a:r></a:p></a:txBody></a:tc></a:tr></a:tbl>
+              <p:sp><p:txBody><a:p><a:r><a:rPr><a:latin typeface="+mj-lt"/></a:rPr></a:r></a:p></p:txBody></p:sp>
+            </p:spTree></p:cSld></p:sld>
+            """
+            let result = PptxFontRewriter.rewrite(xml: xml, to: "Verdana")
+            try v.expectEqual(result.changed, 4, "should rewrite latin+ea inside the group, the table cell and the plain run")
+            try v.expect(result.xml.contains("typeface=\"Verdana\""), "target font must appear")
+            try v.expect(!result.xml.contains("Courier New"), "grouped-shape font must be replaced")
+            try v.expect(!result.xml.contains("Georgia"), "table-cell font must be replaced")
+            // Theme references must survive: rewriting +mj-lt to a literal name would
+            // strip the deck's theme inheritance.
+            try v.expect(result.xml.contains("typeface=\"+mj-lt\""), "theme reference must be left alone")
+            try v.expectEqual(result.replaced.sorted(), ["Arial", "Batang", "Courier New", "Georgia"],
+                              "should report exactly which fonts it displaced")
+            // Idempotent.
+            let again = PptxFontRewriter.rewrite(xml: result.xml, to: "Verdana")
+            try v.expectEqual(again.changed, 0, "a second pass must be a no-op")
+            // Other attributes preserved.
+            try v.expect(result.xml.contains("pitchFamily=\"34\""), "sibling attributes must be preserved")
+            // An empty typeface means "inherit" — filling it in would force a Latin
+            // font onto East-Asian / complex-script text that should fall back.
+            let inheriting = PptxFontRewriter.rewrite(xml: "<a:ea typeface=\"\"/>", to: "Verdana")
+            try v.expectEqual(inheriting.changed, 0, "empty typeface must be left as inherit")
+            // A font name with XML-special characters must be escaped.
+            let escaped = PptxFontRewriter.rewrite(xml: "<a:latin typeface=\"Arial\"/>", to: "A & B \"X\"")
+            try v.expect(escaped.xml.contains("&amp;") && escaped.xml.contains("&quot;"),
+                         "font names must be XML-escaped, not injected raw")
+        }
+        v.check("PptxFontRewriter targets the package parts that carry fonts") {
+            for part in ["ppt/slides/slide1.xml", "ppt/slideLayouts/slideLayout2.xml",
+                         "ppt/slideMasters/slideMaster1.xml", "ppt/notesSlides/notesSlide1.xml",
+                         "ppt/theme/theme1.xml"] {
+                try v.expect(PptxFontRewriter.shouldRewrite(part: part), "\(part) should be rewritten")
+            }
+            for part in ["ppt/media/image1.png", "docProps/app.xml", "[Content_Types].xml",
+                         "ppt/presentation.xml"] {
+                try v.expect(!PptxFontRewriter.shouldRewrite(part: part), "\(part) must NOT be rewritten")
+            }
+        }
+        v.check("Deck-wide font replacement is a panel, never a catalog command") {
+            // Deliberate: it takes seconds, steals focus, and rewrites a whole
+            // document — wrong shape for a hotkey that could be hit by accident on
+            // the wrong deck. It also must not enter the CGEventPost e2e matrix.
+            let offenders = catalog.commands.map(\.id).filter { $0.contains("DeckFont") || $0.contains("ReplaceFonts") }
+            try v.expect(offenders.isEmpty,
+                         "deck-wide font replacement must stay a Settings panel, not a bindable command: \(offenders)")
+        }
+        v.check("Chrome translate uses Chrome's own engine — no JS injection or REST fallback in source") {
             // The Chrome Translate flow used to fall back to Google's public
             // translate_a/single REST endpoint, which is unofficial / ToS-grey
             // and rate-limited. We pivoted to Chrome's on-device Translator API.
@@ -3495,7 +3899,18 @@ struct ValidationHarness {
                     guard path.hasSuffix(".swift") || path.hasSuffix(".json") || path.hasSuffix(".html") else { continue }
                     let full = "\(root)/\(path)"
                     guard let txt = try? String(contentsOfFile: full, encoding: .utf8) else { continue }
-                    if txt.contains("translate.googleapis.com") || txt.contains("translate_a/single") {
+                    // Bans the unofficial REST endpoint AND the DOM-rewriting
+                    // JS-injection approach that replaced it. Rewriting text
+                    // nodes one by one is a look-alike for translation, not
+                    // Chrome's translation (CLAUDE.md: NO FAKE IMPLEMENTATIONS)
+                    // — it mangles inline markup, misses dynamic content, and
+                    // needed two per-profile setup gates. Chrome's real
+                    // translate is driven over AX instead.
+                    let banned = ["translate.googleapis.com", "translate_a/single",
+                                  "execute active tab", "execute javascript",
+                                  "__ribbindOrig", "_ribbindLastResult",
+                                  "Translator.create", "ChromeJSAutomation"]
+                    if banned.contains(where: { txt.contains($0) }) {
                         hits.append(full)
                     }
                 }

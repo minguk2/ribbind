@@ -32,6 +32,10 @@ public struct OfficeStateSnapshot: Equatable, Sendable {
     public let pptShapeCountCurrentSlide: Int?
     public let pptActiveSlideIndex: Int?
     public let pptPresentationCount: Int?
+    /// `hidden` of the slide currently in view (Slide Show > Hide/Unhide Slide).
+    /// Read from the view's slide, not slide 1, because that is what
+    /// `powerpoint.HideSlide` actually toggles.
+    public let pptActiveSlideHidden: Bool?
 
     // MARK: - Read
 
@@ -68,7 +72,8 @@ public struct OfficeStateSnapshot: Equatable, Sendable {
             wordDocumentCount: nil,
             pptShapeCountCurrentSlide: nil,
             pptActiveSlideIndex: nil,
-            pptPresentationCount: nil
+            pptPresentationCount: nil,
+            pptActiveSlideHidden: nil
         )
     }
 
@@ -93,6 +98,7 @@ public struct OfficeStateSnapshot: Equatable, Sendable {
         check("pptShapeCountCurrentSlide", self.pptShapeCountCurrentSlide, other.pptShapeCountCurrentSlide)
         check("pptActiveSlideIndex", self.pptActiveSlideIndex, other.pptActiveSlideIndex)
         check("pptPresentationCount", self.pptPresentationCount, other.pptPresentationCount)
+        check("pptActiveSlideHidden", self.pptActiveSlideHidden, other.pptActiveSlideHidden)
         return out
     }
 
@@ -182,7 +188,8 @@ public struct OfficeStateSnapshot: Equatable, Sendable {
             wordDocumentCount: fields["docs"].flatMap(Int.init),
             pptShapeCountCurrentSlide: nil,
             pptActiveSlideIndex: nil,
-            pptPresentationCount: nil
+            pptPresentationCount: nil,
+            pptActiveSlideHidden: nil
         )
     }
 
@@ -216,7 +223,8 @@ public struct OfficeStateSnapshot: Equatable, Sendable {
             wordDocumentCount: nil,
             pptShapeCountCurrentSlide: fields["shapeCount"].flatMap(Int.init),
             pptActiveSlideIndex: fields["slideIdx"].flatMap(Int.init),
-            pptPresentationCount: fields["pres"].flatMap(Int.init)
+            pptPresentationCount: fields["pres"].flatMap(Int.init),
+            pptActiveSlideHidden: fields["slideHidden"].map { $0 == "true" }
         )
     }
 
@@ -234,6 +242,11 @@ public struct OfficeStateSnapshot: Equatable, Sendable {
                     set acc to acc & "slideIdx=" & (slide index of sl) & linefeed
                     set acc to acc & "shapeCount=" & (count of shapes of sl) & linefeed
                 end if
+            end try
+            try
+                set viewSlideIndex to slide index of slide of view of document window 1
+                set acc to acc & "viewSlideIdx=" & viewSlideIndex & linefeed
+                set acc to acc & "slideHidden=" & ((hidden of slide show transition of slide viewSlideIndex of active presentation) as string) & linefeed
             end try
             try
                 set sel to selection of active window

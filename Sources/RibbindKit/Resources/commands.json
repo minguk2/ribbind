@@ -214,6 +214,10 @@
     "category": "Picture",
     "dispatchRecipes": [
       {
+        "type": "appleScript",
+        "source": "tell application \"Microsoft Word\"\n  if (count of inline shapes of selection) > 0 then\n    set theShape to inline shape 1 of selection\n    set currentState to lock aspect ratio of theShape\n    set lock aspect ratio of theShape to (not currentState)\n    return \"lockAspectRatio=\" & ((not currentState) as string) & \" kind=inline\"\n  end if\n  error \"Ribbind: no inline picture selected\" number -1728\nend tell"
+      },
+      {
         "type": "axClick",
         "role": "AXCheckBox",
         "titleContains": "Lock Aspect Ratio",
@@ -221,7 +225,7 @@
         "tabName": "Picture Format"
       }
     ],
-    "notes": "Toggles Lock Aspect Ratio. REQUIRES an image selected AND the Format Picture side pane open (right-click image → Format Picture, or use the Picture Format tab → Format Picture button) so the checkbox is in the AX tree.",
+    "notes": "Toggles Lock Aspect Ratio on the selected picture. REQUIRES an image selected, but NOT the Format Picture pane \u2014 PRIMARY sets `lock aspect ratio` on `inline shape 1 of selection`, which covers inserted pictures (the common case). FLOATING shapes are deliberately NOT handled by the AppleScript path: Word 16.112 rejects `count of shapes of selection` (-1708) and `lock aspect ratio of shape 1 of selection` (-1700), so the recipe errors out and the axClick FALLBACK (which does need the Format Picture pane open) takes over.",
     "defaultShortcut": "⌘⇧X"
   },
   {
@@ -333,13 +337,17 @@
     "category": "Picture",
     "dispatchRecipes": [
       {
+        "type": "appleScript",
+        "source": "tell application \"Microsoft PowerPoint\"\n  set theRange to shape range of selection of document window 1\n  if (count of shapes of theRange) is 0 then error \"Ribbind: no shape selected\" number -1728\n  set currentState to lock aspect ratio of theRange\n  set lock aspect ratio of theRange to (not currentState)\n  return \"lockAspectRatio=\" & ((not currentState) as string)\nend tell"
+      },
+      {
         "type": "axClick",
         "role": "AXCheckBox",
         "titleContains": "Lock Aspect Ratio",
         "helpContains": "Lock Aspect Ratio"
       }
     ],
-    "notes": "Toggles Lock Aspect Ratio checkbox. REQUIRES an image selected AND the Format Picture side pane open (Picture Format tab → Format Pane, or right-click → Format Picture) so the checkbox is in the AX tree.",
+    "notes": "Toggles Lock Aspect Ratio on the current selection. REQUIRES a shape/image selected, but NOT the Format Picture pane \u2014 PRIMARY sets `lock aspect ratio` on `shape range of selection`, a property of the range itself, so it works whatever is on screen and covers multi-selection. FALLBACK is the old Ribbon checkbox click, which does need the pane open.",
     "defaultShortcut": "⌘⇧X"
   },
   {
@@ -518,11 +526,19 @@
     "category": "Slide Show",
     "dispatchRecipes": [
       {
+        "type": "appleScript",
+        "source": "tell application \"Microsoft PowerPoint\"\n  set thePres to active presentation\n  set theWindow to document window 1\n  set targetIndexes to {}\n  try\n    set theRange to slide range of selection of theWindow\n    repeat with rangeIdx from 1 to (count of slides of theRange)\n      set end of targetIndexes to (slide index of slide rangeIdx of theRange)\n    end repeat\n  end try\n  if (count of targetIndexes) is 0 then\n    set end of targetIndexes to (slide index of slide of view of theWindow)\n  end if\n  set newState to not (hidden of slide show transition of slide (item 1 of targetIndexes) of thePres)\n  repeat with slideIdx in targetIndexes\n    set hidden of slide show transition of slide slideIdx of thePres to newState\n  end repeat\n  return \"slideHidden=\" & (newState as string) & \" count=\" & (count of targetIndexes)\nend tell"
+      },
+      {
         "type": "nsUserKeyEquivalent",
         "menuTitle": "Hide Slide"
+      },
+      {
+        "type": "nsUserKeyEquivalent",
+        "menuTitle": "Unhide Slide"
       }
     ],
-    "notes": "AX-press the Slide Show > Hide Slide menu bar item to toggle the selected slide's hidden state (slide will be skipped during slideshow).",
+    "notes": "Toggles the hidden state of every selected slide (falls back to the slide in view). PRIMARY reads `hidden of slide show transition` and writes its inverse, so it works no matter how the slide got hidden \u2014 including slides hidden before Ribbind ran. FALLBACKS AX-press the Slide Show menu item, which PowerPoint renames to \"Unhide Slide\" on a hidden slide; both titles are listed because `pressMenuItem` matches titles exactly.",
     "defaultShortcut": "⌘⇧H"
   },
   {
@@ -532,13 +548,10 @@
     "category": "Page",
     "dispatchRecipes": [
       {
-        "type": "chromeTranslateToggle"
+        "type": "chromeNativeTranslate"
       }
     ],
-    "notes": "Pure-backend toggle via AppleScript JS injection. Uses Chrome 138+'s on-device `Translator` + `LanguageDetector` APIs (same engine as the URL-bar translate icon). Toggle keeps state in `<html data-ribbindTranslated>` + each text node's `__ribbindOrig`. No external network at translation time, no API keys, no rate limits, works on any page (PDF / SPA / file://) regardless of the URL-bar icon visibility. Two one-time setups per Chrome profile, both surfaced in Ribbind Settings → Google Chrome: (1) `View > Developer > Allow JavaScript from Apple Events` toggle (Chrome's per-profile security gate); (2) translation model download, which Chrome requires to be triggered by a real user gesture — Ribbind installs a one-shot click listener on the active tab and prompts the user to click anywhere on the page once.",
-    "defaultParameters": {
-      "targetLanguage": "ko"
-    },
+    "notes": "Runs Chrome's OWN full-page translate — the same thing right-click > Translate to ... does — by AX-pressing the omnibox Translate button and then the language radio in Chrome's native translate bubble. Press again to show the original. NO JavaScript injection, NO DOM rewriting, and no Chrome-side setup: the 'Allow JavaScript from Apple Events' toggle and the translation-model download are both gone. The target language is Chrome's own setting (Chrome > Settings > Languages), so this recipe takes no parameters, and the toggle state is read from Chrome's bubble rather than tracked by Ribbind. Needs Accessibility only — no Automation prompt for Chrome. Fails cleanly when Chrome offers no Translate control (internal pages, PDFs, pages already in your language).",
     "defaultShortcut": "⌃⌘T"
   },
   {

@@ -460,70 +460,49 @@ public final class BindingCoordinator: ObservableObject {
             let interpolated = Self.interpolate(source: source, command: command, binding: binding)
             return RibbonHotkeyDispatcher.fireAppleScript(source: interpolated, commandId: command.id)
 
-        case .chromeTranslateToggle:
-            // Read targetLanguage from binding params (or catalog default).
-            let resolved = (binding?.parameters ?? [:])
-                .merging(command.defaultParameters ?? [:]) { cur, _ in cur }
-            let targetLang = resolved["targetLanguage"] ?? "ko"
+        case .chromeNativeTranslate:
+            // Runs Chrome's own translate over AX. No parameters: the target
+            // language is Chrome's own setting, and the toggle state is read from
+            // Chrome's bubble rather than tracked here.
+            //
+            // Detached for the same reason as the AX recipes above — the bubble
+            // poll sleeps, and blocking the main actor freezes the menu-bar icon.
             let commandId = command.id
-            // Move the adaptive poll loop (up to 30 s of Thread.sleep on whoever
-            // calls this) off the main thread. Without this, every ⌃⌘T fire
-            // would freeze Ribbind's main thread — and therefore its menu-bar
-            // icon at the top-right of the screen — for the entire duration of
-            // the translation. The page-side state machine + JS-level BUSY
-            // guard keep concurrent fires safe; the only behaviour change is
-            // that `tryDispatch` returns immediately instead of after the JS
-            // completes (consistent with the existing `.appleScript` fire-and-
-            // forget path).
             Task.detached(priority: .userInitiated) {
                 do {
-                    try RibbonButtonClicker.chromeTranslateToggle(targetLanguage: targetLang)
-                    NSLog("[Ribbind] dispatched %@ via chromeTranslateToggle (async)", commandId)
-                } catch let f as RibbonButtonClicker.Failure {
+                    let outcome = try ChromeTranslateDispatcher.toggle()
+                    NSLog("[Ribbind] dispatched %@ via chromeNativeTranslate (%@ -> %@)",
+                          commandId, outcome.from, outcome.to)
+                } catch let failure as ChromeTranslateDispatcher.Failure {
                     await MainActor.run {
-                        switch f {
-                        case .chromeTranslateGestureRequired(let s, let t):
+                        switch failure {
+                        case .accessibilityNotAuthorized:
                             RibbindNotifier.notify(
-                                title: "Translation model not ready",
-                                body: "Open Ribbind Settings → Google Chrome → Initialize translation model to download the \(s) → \(t) model (one-time, ~50 MB)."
+                                title: "Accessibility permission needed",
+                                body: "Grant Ribbind Accessibility in System Settings → Privacy & Security → Accessibility, then try again."
                             )
-                        case .chromeTranslateSameLanguage:
+                        case .translateUnavailable:
                             RibbindNotifier.notify(
-                                title: "Already in target language",
-                                body: "This page is already in your target language — nothing to translate."
+                                title: "This page can't be translated",
+                                body: "Chrome offers no Translate option here — same as right-clicking the page. Internal pages, PDFs and pages already in your language have none."
                             )
-                        case .chromeTranslatePairUnavailable(let s, let t):
+                        case .axTreeUnavailable:
                             RibbindNotifier.notify(
-                                title: "Translation pair not available",
-                                body: "Chrome can't translate \(s) → \(t) on this device. Try another target language in Ribbind Settings."
+                                title: "Chrome isn't exposing its window",
+                                body: "Chrome's accessibility tree is unavailable (this can happen after a long session). Quit and reopen Chrome, then try again."
                             )
-                        case .chromeTranslateAPIMissing:
+                        case .bubbleNotFound:
                             RibbindNotifier.notify(
-                                title: "Chrome too old",
-                                body: "Chrome 138 or newer is required for built-in translation."
+                                title: "Translate didn't respond",
+                                body: "Chrome's translate panel never appeared. Try again."
                             )
-                        case .chromeTranslateInternal(let m):
-                            RibbindNotifier.notify(
-                                title: "Translation failed",
-                                body: m
-                            )
-                        case .chromeTranslateBusy:
-                            RibbindNotifier.notify(
-                                title: "Translation in progress",
-                                body: "A previous Translate Page run is still working on this tab. Wait a moment, then try again — pressing the shortcut while the page is mid-translation would corrupt the toggle state."
-                            )
-                        case .chromeTranslateDetectorUnavailable:
-                            RibbindNotifier.notify(
-                                title: "Couldn't detect page language",
-                                body: "This page has no <html lang> attribute and Chrome's LanguageDetector API didn't return a result. Reload the page or pick a different tab."
-                            )
-                        default:
-                            NSLog("[Ribbind] chromeTranslateToggle failed for %@: %@",
-                                  commandId, String(describing: f))
+                        case .chromeNotRunning, .pressFailed:
+                            NSLog("[Ribbind] chromeNativeTranslate failed for %@: %@",
+                                  commandId, String(describing: failure))
                         }
                     }
                 } catch {
-                    NSLog("[Ribbind] chromeTranslateToggle failed for %@: %@",
+                    NSLog("[Ribbind] chromeNativeTranslate failed for %@: %@",
                           commandId, String(describing: error))
                 }
             }
