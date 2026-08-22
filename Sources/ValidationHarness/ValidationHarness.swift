@@ -66,6 +66,9 @@ enum Subcommand: String, CaseIterable {
     case chromeEnumerateMenuItems   = "chrome-enumerate-menu-items"
     case chromeAxProbe              = "chrome-ax-probe"        // dump Chrome's translate UI
     case chromeTranslateNow         = "chrome-translate-now"   // fire the real dispatcher
+    case chromeProbeForceTranslate  = "chrome-probe-force-translate" // dump the ⋮/context-menu paths
+    case chromeVerifyMenuRoute      = "chrome-verify-menu-route"     // ⋮ fallback, shipping code path
+    case chromeVerifyHotkey         = "chrome-verify-hotkey"        // SHIP gate — CGEventPost the bound combo
     case pptListPresentations       = "ppt-list-presentations"
     case pptApplicableFonts         = "ppt-applicable-fonts"
     case pptUsedFonts               = "ppt-used-fonts"
@@ -383,6 +386,25 @@ struct ValidationHarness {
                 print("used fonts \(report.usedFontsBefore.map(String.init) ?? "?") -> \(report.usedFontsAfter.map(String.init) ?? "?")")
                 print(String(format: "duration %.1fs  complete=%@", report.duration, report.isComplete ? "YES" : "NO"))
             }
+
+        case .chromeVerifyHotkey:
+            runCLI { try chromeVerifyHotkeyCLI() }
+
+        case .chromeVerifyMenuRoute:
+            // Calls the SHIPPING dispatcher's ⋮ route, not a copy, and stops before
+            // pressing a language radio so the user's page is untouched.
+            runCLI {
+                guard let radios = ChromeTranslateDispatcher.probeAppMenuRoute() else {
+                    throw Validator.ValidationError("⋮ fallback did not reach Chrome's translate bubble")
+                }
+                print("✓ ⋮ ▸ Translate… reached the native bubble via the shipping dispatcher:")
+                for r in radios {
+                    print("   \(r.language)\(r.selected ? "  <- currently shown" : "")")
+                }
+            }
+
+        case .chromeProbeForceTranslate:
+            runCLI { try chromeProbeForceTranslateCLI() }
 
         case .chromeTranslateNow:
             // Exercises the SHIPPING dispatcher, not a copy of it. Chrome must be
@@ -3280,6 +3302,273 @@ struct ValidationHarness {
                 print("   radio \"\(AXProbe.title(r))\" value=\(AXProbe.value(r))\(mark)")
             }
         }
+    }
+
+    /// Answers one question and nothing else: **when Chrome does not offer a
+    /// translation, which UI path still reaches its native translate bubble, and how
+    /// is that path exposed to Accessibility?**
+    ///
+    /// Needed because the ⋮ menu is a Views widget, not a Cocoa `NSMenu`: pressing it
+    /// emptied Chrome's `AXWindows` and produced no `AXMenu` anywhere in a 2026-08-22
+    /// probe, so `ChromeTranslateDispatcher`'s app-menu fallback cannot be taken on
+    /// faith. Run this on a page with NO omnibox Translate button (any English or
+    /// Korean page, given `accept_languages = en-US,en,ko`).
+    ///
+    /// It drives real UI: Chrome comes to the front, a menu opens, and Escape closes
+    /// it. Nothing is clicked, so no page state changes.
+    static func chromeProbeForceTranslateCLI() throws {
+        guard AXIsProcessTrusted() else {
+            throw Validator.ValidationError("Accessibility not granted to this process")
+        }
+        guard let running = NSWorkspace.shared.runningApplications
+            .first(where: { $0.bundleIdentifier == "com.google.Chrome" }) else {
+            throw Validator.ValidationError("Google Chrome isn't running")
+        }
+        running.activate()
+        Thread.sleep(forTimeInterval: 0.6)
+        let app = AXProbe.app(pid: running.processIdentifier)
+        AXProbe.setMessagingTimeout(app, seconds: 3.0)
+
+        func roots() -> [AXUIElement] {
+            var out = AXProbe.allWindows(of: app)
+            for child in AXProbe.children(of: app) where AXProbe.role(child) == "AXMenu" { out.append(child) }
+            return out
+        }
+        func describeRoots(_ note: String) {
+            let all = roots()
+            print("  \(note): \(all.count) root(s)")
+            for r in all {
+                print("     role=\(AXProbe.role(r)) subrole=\(AXProbe.subrole(r)) title=\"\(AXProbe.title(r))\"")
+            }
+        }
+        /// Every element whose label mentions translation, whatever its role — the
+        /// point of the probe is to learn the role, not to assume it.
+        func translateCandidates() -> [(role: String, label: String)] {
+            var out: [(String, String)] = []
+            for root in roots() {
+                let hits = AXProbe.find(in: root, maxDepth: 16, maxNodes: 6000, firstOnly: false) { element, _ in
+                    let title = AXProbe.title(element), desc = AXProbe.desc(element)
+                    let text = (title + " " + desc).lowercased()
+                    return text.contains("translat") || (title + desc).contains("번역")
+                }
+                for h in hits {
+                    let title = AXProbe.title(h)
+                    out.append((AXProbe.role(h), title.isEmpty ? AXProbe.desc(h) : title))
+                }
+            }
+            return out
+        }
+
+        print("=== baseline (no menu open)")
+        describeRoots("roots")
+        let omnibox = browserWindowsOf(app).compactMap { window in
+            AXProbe.find(in: window, maxDepth: 12) { el, role in
+                role == "AXButton" && AXProbe.desc(el) == "Translate"
+            }.first
+        }.first
+        print("  omnibox Translate button: \(omnibox == nil ? "ABSENT — good, this is the case we need to cover" : "present (fast path already works here)")")
+        for c in translateCandidates() { print("     baseline candidate: \(c.role) \"\(c.label)\"") }
+
+        guard let dots = browserWindowsOf(app).compactMap({ window in
+            AXProbe.find(in: window, maxDepth: 12) { el, role in
+                (role == "AXPopUpButton" || role == "AXMenuButton" || role == "AXButton")
+                    && (AXProbe.desc(el) == "Chrome" || AXProbe.desc(el).hasPrefix("Chrome "))
+            }.first
+        }).first else {
+            throw Validator.ValidationError("three-dot (⋮) button not found — Chrome's toolbar changed")
+        }
+        print("  ⋮ button actions: \(AXProbe.actionNames(of: dots))")
+
+        // Only AXPress opens it: AXShowMenu returned success and opened nothing.
+        print("=== ⋮ opened with AXPress")
+        print("  perform → AXError \(AXProbe.perform(dots, "AXPress").rawValue)")
+        Thread.sleep(forTimeInterval: 1.2)
+        describeRoots("roots while menu open")
+        for c in translateCandidates() { print("  ✓ \(c.role) \"\(c.label)\"") }
+
+        // Press the item and watch for the bubble — but never press a language radio,
+        // so the page the user is working in is left exactly as it was.
+        let item = roots()
+            .flatMap { root in
+                AXProbe.find(in: root, maxDepth: 16, firstOnly: false) { _, role in
+                    role == "AXMenuItem" || role == "AXCell"
+                }
+            }
+            .first(where: { element in
+                let raw = AXProbe.title(element).isEmpty ? AXProbe.desc(element) : AXProbe.title(element)
+                let n = raw.replacingOccurrences(of: "\u{2026}", with: "")
+                    .replacingOccurrences(of: "...", with: "")
+                    .trimmingCharacters(in: .whitespaces)
+                    .lowercased()
+                return n == "translate" || n == "translate page" || n == "translate this page"
+                    || n.replacingOccurrences(of: " ", with: "") == "번역"
+            })
+        guard let item else {
+            print("  ✗ no pressable Translate menu item — the ⋮ fallback cannot work")
+            AXProbe.pressEscape()
+            return
+        }
+        print("=== pressing \"\(AXProbe.title(item))\"")
+        print("  perform → AXError \(AXProbe.perform(item).rawValue)")
+        let radios = AXProbe.poll(timeout: 6.0, interval: 0.1) { () -> [(String, String)]? in
+            var found: [(String, String)] = []
+            for w in AXProbe.allWindows(of: app) where AXProbe.subrole(w) != "AXStandardWindow" {
+                for r in AXProbe.find(in: w, maxDepth: 14, firstOnly: false, where: { _, role in role == "AXRadioButton" })
+                where !AXProbe.title(r).isEmpty {
+                    found.append((AXProbe.title(r), AXProbe.value(r)))
+                }
+            }
+            return found.count >= 2 ? found : nil
+        }
+        if let radios {
+            print("  ✓ translate bubble opened with \(radios.count) language radio(s):")
+            for (lang, value) in radios {
+                print("     \"\(lang)\" value=\(value)\(value == "1" ? "  <- currently shown" : "")")
+            }
+            print("  → the ⋮ fallback reaches the real bubble; nothing pressed, page unchanged")
+        } else {
+            print("  ✗ no bubble appeared — the ⋮ fallback stops here")
+        }
+        AXProbe.pressEscape()
+    }
+
+    /// SHIP gate for `chrome.Translate`, per CLAUDE.md: post the user's **real** bound
+    /// combo with `CGEventPost` and observe the page actually change language.
+    ///
+    /// Deliberately runs on a throwaway `example.com` tab rather than whatever the
+    /// user is reading: the assertion translates the page for real. English is the
+    /// point — with `accept_languages = en-US,en,ko` Chrome does not offer a
+    /// translation there, so the omnibox button is absent and the ⋮ ▸ *Translate…*
+    /// fallback is the only thing that can satisfy this check.
+    static func chromeVerifyHotkeyCLI() throws {
+        guard AXIsProcessTrusted() else {
+            throw Validator.ValidationError("Accessibility not granted to this process")
+        }
+        guard let combo = readUserBoundCombo(commandId: "chrome.Translate") else {
+            throw Validator.ValidationError("chrome.Translate has no user binding in com.minguk2.ribbind.plist")
+        }
+        guard NSWorkspace.shared.runningApplications.contains(where: {
+            $0.bundleIdentifier == "com.minguk2.ribbind"
+        }) else {
+            throw Validator.ValidationError("Ribbind.app isn't running — the Carbon hotkey can't be registered")
+        }
+        let statePath = (NSHomeDirectory() as NSString)
+            .appendingPathComponent("Library/Application Support/Ribbind/permission-state.json")
+        if let data = FileManager.default.contents(atPath: statePath),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           json["axGranted"] as? Bool == false {
+            throw Validator.ValidationError("Ribbind.app lacks Accessibility — run verify-ribbind-tcc for the fix")
+        }
+
+        // A fresh tab, so nothing the user has open is touched. Override the URL to
+        // aim the gate at a page where Chrome offers no translation, which is what
+        // forces the ⋮ fallback.
+        let cliArgs = CommandLine.arguments
+        let url = cliArgs.count >= 3 ? cliArgs[2] : "https://example.com"
+        print("opening \(url) in a new tab…")
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        task.arguments = ["-a", "Google Chrome", url]
+        try task.run()
+        task.waitUntilExit()
+        Thread.sleep(forTimeInterval: 3.5)
+
+        guard let running = NSWorkspace.shared.runningApplications
+            .first(where: { $0.bundleIdentifier == "com.google.Chrome" }) else {
+            throw Validator.ValidationError("Google Chrome isn't running")
+        }
+        running.activate()
+        Thread.sleep(forTimeInterval: 0.8)
+        let app = AXProbe.app(pid: running.processIdentifier)
+        AXProbe.setMessagingTimeout(app, seconds: 3.0)
+
+        let omniboxPresent = browserWindowsOf(app).contains { window in
+            !AXProbe.find(in: window, maxDepth: 12, where: { el, role in
+                role == "AXButton" && AXProbe.desc(el) == "Translate"
+            }).isEmpty
+        }
+        print("omnibox Translate button: \(omniboxPresent ? "present — this run exercises the FAST path, not the ⋮ fallback" : "absent — the ⋮ fallback is the only way through")")
+
+        let before = chromePageText(app)
+        guard !before.isEmpty else {
+            throw Validator.ValidationError("could not read any page text from Chrome's web area")
+        }
+        print("page text before: \"\(before.prefix(60))\"")
+
+        print("posting the user's bound combo (carbonKeyCode \(combo.keyCode), modifiers 0x\(String(combo.carbonModifiers, radix: 16)))…")
+        if let failure = postCombo(combo: combo) {
+            throw Validator.ValidationError("CGEventPost failed: \(failure)")
+        }
+
+        // Menu open + item press + bubble + Chrome's own translate round-trip.
+        let after = AXProbe.poll(timeout: 20.0, interval: 0.5) { () -> String? in
+            let now = chromePageText(app)
+            return (!now.isEmpty && now != before) ? now : nil
+        }
+        defer {
+            // Close the throwaway tab (⌘W) so the user's window is left as it was.
+            let src = CGEventSource(stateID: .hidSystemState)
+            for down in [true, false] {
+                if let e = CGEvent(keyboardEventSource: src, virtualKey: 13, keyDown: down) {
+                    e.flags = .maskCommand
+                    e.post(tap: .cghidEventTap)
+                }
+            }
+        }
+        guard let after else {
+            throw Validator.ValidationError(
+                "page text never changed after the hotkey — translate did not land (still \"\(before.prefix(40))\")")
+        }
+        print("page text after:  \"\(after.prefix(60))\"")
+        if omniboxPresent {
+            print("✓ SHIP gate passed via the OMNIBOX route — the ⋮ fallback was not exercised.")
+            print("  Re-run against a page with no Translate button to cover it:")
+            print("    swift run ValidationHarness chrome-verify-hotkey <url>")
+        } else {
+            print("✓ SHIP gate passed via the ⋮ FALLBACK — the real bound combo translated a page Chrome never offered to translate")
+        }
+    }
+
+    /// Visible text of the page, read straight out of the web area.
+    ///
+    /// `AXProbe.find` prunes `AXWebArea` on purpose (unbounded page content), so this
+    /// walks in explicitly and stays shallow — enough for a heading and a paragraph,
+    /// which is all the assertion needs.
+    private static func chromePageText(_ app: AXUIElement) -> String {
+        for window in browserWindowsOf(app) {
+            var queue: [(AXUIElement, Int)] = [(window, 0)]
+            var visited = 0
+            var web: AXUIElement?
+            while !queue.isEmpty, visited < 2000, web == nil {
+                let (element, depth) = queue.removeFirst()
+                visited += 1
+                let role = AXProbe.role(element)
+                if role == "AXWebArea" { web = element; break }
+                if role == "AXApplication" { continue }
+                if depth < 12 { for child in AXProbe.children(of: element) { queue.append((child, depth + 1)) } }
+            }
+            guard let web else { continue }
+            var texts: [String] = []
+            var q: [(AXUIElement, Int)] = [(web, 0)]
+            var seen = 0
+            while !q.isEmpty, seen < 400 {
+                let (element, depth) = q.removeFirst()
+                seen += 1
+                let role = AXProbe.role(element)
+                if role == "AXStaticText" || role == "AXHeading" {
+                    let text = AXProbe.value(element).isEmpty ? AXProbe.title(element) : AXProbe.value(element)
+                    if !text.isEmpty { texts.append(text) }
+                }
+                if depth < 8 { for child in AXProbe.children(of: element) { q.append((child, depth + 1)) } }
+            }
+            let joined = texts.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !joined.isEmpty { return joined }
+        }
+        return ""
+    }
+
+    private static func browserWindowsOf(_ app: AXUIElement) -> [AXUIElement] {
+        AXProbe.allWindows(of: app).filter { AXProbe.subrole($0) == "AXStandardWindow" }
     }
 
     static func enumerateMenuItemsCLI(_ app: AppTarget) throws {
